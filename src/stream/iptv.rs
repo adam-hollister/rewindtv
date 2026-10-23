@@ -3,7 +3,6 @@
 
 use std::fmt::Write as _;
 use std::process::Stdio;
-use std::time::Instant;
 
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -11,7 +10,7 @@ use axum::http::{header, HeaderMap};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use serde::Deserialize;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -143,15 +142,72 @@ async fn item_genres(st: &AppState, programs: &[ProgramInfo]) -> ApiResult<std::
     Ok(map)
 }
 
-async fn current_program(st: &AppState, channel_id: i64) -> anyhow::Result<Option<ProgramInfo>> {
-    let now = now_ms();
-    if let Some(p) = guide::at(&st.db, channel_id, now).await? {
+async fn program_at(st: &AppState, channel_id: i64, t_ms: i64) -> anyhow::Result<Option<ProgramInfo>> {
+    if let Some(p) = guide::at(&st.db, channel_id, t_ms).await? {
         return Ok(Some(p));
     }
     let _guard = st.guide_lock.lock().await;
     let items = store::load_items(&st.db).await?;
-    store::extend_channel(&st.db, &items, channel_id, st.cfg.tz, now).await?;
-    Ok(guide::at(&st.db, channel_id, now).await?)
+    store::extend_channel(&st.db, &items, channel_id, st.cfg.tz, now_ms()).await?;
+    Ok(guide::at(&st.db, channel_id, t_ms).await?)
+}
+
+/// Upper bound on how far before the requested offset a keyframe seek can land.
+const SEEK_PREROLL_S: f64 = 5.0;
+
+/// Finds the highest PES timestamp in an MPEG-TS byte stream.
+struct PtsScanner {
+    carry: Vec<u8>,
+    /// Seconds, unwrapped relative to `base`.
+    max: Option<f64>,
+    base: f64,
+}
+
+impl PtsScanner {
+    const WRAP: f64 = (1u64 << 33) as f64 / 90_000.0;
+
+    fn new(base: f64) -> Self {
+        Self { carry: Vec::new(), max: None, base }
+    }
+
+    fn feed(&mut self, data: &[u8]) {
+        self.carry.extend_from_slice(data);
+        let mut i = 0;
+        while i + 188 <= self.carry.len() {
+            if self.carry[i] != 0x47 {
+                i += 1; // resync
+                continue;
+            }
+            if let Some(ts) = pes_pts(&self.carry[i..i + 188]) {
+                let mut secs = ts as f64 / 90_000.0;
+                while secs < self.base - Self::WRAP / 2.0 {
+                    secs += Self::WRAP;
+                }
+                self.max = Some(self.max.map_or(secs, |m| m.max(secs)));
+            }
+            i += 188;
+        }
+        self.carry.drain(..i);
+    }
+}
+
+/// PTS from a TS packet that starts an audio/video PES.
+fn pes_pts(pkt: &[u8]) -> Option<u64> {
+    if pkt[1] & 0x40 == 0 {
+        return None; // not a payload unit start
+    }
+    let afc = (pkt[3] >> 4) & 3;
+    let start = match afc {
+        1 => 4,
+        3 => 5 + pkt[4] as usize,
+        _ => return None,
+    };
+    let p = pkt.get(start..)?;
+    if p.len() < 14 || p[..3] != [0, 0, 1] || !(0xC0..=0xEF).contains(&p[3]) || p[7] & 0x80 == 0 {
+        return None;
+    }
+    let t = &p[9..14];
+    Some(((t[0] as u64 >> 1) & 7) << 30 | (t[1] as u64) << 22 | ((t[2] as u64) >> 1) << 15 | (t[3] as u64) << 7 | (t[4] as u64) >> 1)
 }
 
 /// ffmpeg arguments for one program (or filler) segment of a continuous stream.
@@ -160,7 +216,9 @@ fn ffmpeg_args(st: &AppState, input: Option<&str>, offset_s: f64, length_s: f64,
     let transcode = st.cfg.iptv_video == "h264";
     match input {
         Some(url) => {
-            a.extend(["-ss".into(), format!("{offset_s:.3}"), "-i".into(), url.into()]);
+            // Non-accurate seek starts cleanly on the keyframe before the offset,
+            // so copied video has no negative pre-roll overlapping the last program.
+            a.extend(["-noaccurate_seek".into(), "-ss".into(), format!("{offset_s:.3}"), "-i".into(), url.into()]);
             a.extend(["-t", &format!("{length_s:.3}"), "-map", "0:v:0", "-map", "0:a:0?"].map(String::from));
             if transcode {
                 a.extend(["-vf", "scale=-2:720,fps=30", "-c:v", "libx264", "-preset", "veryfast", "-b:v", "4M", "-g", "60"].map(String::from));
@@ -176,6 +234,8 @@ fn ffmpeg_args(st: &AppState, input: Option<&str>, offset_s: f64, length_s: f64,
         }
     }
     a.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "192k"].map(String::from));
+    // Shift this program to start right where the previous one ended.
+    a.extend(["-muxdelay", "0", "-muxpreload", "0"].map(String::from));
     a.extend(["-output_ts_offset".into(), format!("{ts_offset_s:.3}")]);
     a.extend(["-mpegts_flags", "+resend_headers", "-f", "mpegts", "pipe:1"].map(String::from));
     a
@@ -185,20 +245,37 @@ fn ffmpeg_args(st: &AppState, input: Option<&str>, offset_s: f64, length_s: f64,
 /// keeps timestamps continuous across program changes.
 pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> ApiResult<Response> {
     let channel_id: i64 = file.trim_end_matches(".ts").parse().map_err(|_| ApiError::NotFound)?;
-    current_program(&st, channel_id).await?.ok_or(ApiError::NotFound)?;
+    program_at(&st, channel_id, now_ms()).await?.ok_or(ApiError::NotFound)?;
 
     let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(64);
     tokio::spawn(async move {
-        let started = Instant::now();
+        // Output timeline position in seconds; each program continues from
+        // where the last one actually ended, so timestamps never jump back.
+        let mut ts_offset = 1.0f64;
+        // Schedule position being played. Programs play once each, start to
+        // finish; only tuning in (or rejoining after falling behind) seeks.
+        let mut cursor = now_ms();
         let mut failed: Option<i64> = None;
         loop {
-            let prog = match current_program(&st, channel_id).await {
+            if cursor < now_ms() - 5_000 {
+                cursor = now_ms();
+            }
+            let prog = match program_at(&st, channel_id, cursor).await {
                 Ok(Some(p)) => p,
                 _ => break,
             };
-            let now = now_ms();
-            let offset_s = (now - prog.start_ms).max(0) as f64 / 1000.0;
-            let length_s = ((prog.end_ms - now).max(1000)) as f64 / 1000.0;
+            let offset_ms = (cursor - prog.start_ms).max(0);
+            let length_ms = prog.end_ms - prog.start_ms - offset_ms;
+            if length_ms < 500 {
+                cursor = prog.end_ms;
+                continue;
+            }
+            if offset_ms > 0 {
+                // A seek starts on the keyframe before the offset; leave room
+                // for that pre-roll so it can't overlap what was already sent.
+                ts_offset += SEEK_PREROLL_S;
+            }
+            let (offset_s, length_s) = (offset_ms as f64 / 1000.0, length_ms as f64 / 1000.0);
             let input = if prog.is_filler() || failed == Some(prog.id) {
                 None
             } else {
@@ -207,14 +284,21 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
                     Err(_) => None,
                 }
             };
-            let ts_offset = started.elapsed().as_secs_f64();
             let args = ffmpeg_args(&st, input.as_ref().map(|u| u.as_str()), offset_s, length_s, ts_offset);
-            let Ok(mut child) = Command::new(&st.cfg.ffmpeg).args(&args).stdout(Stdio::piped()).stderr(Stdio::inherit()).kill_on_drop(true).spawn()
+            let Ok(mut child) = Command::new(&st.cfg.ffmpeg).args(&args).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).spawn()
             else {
                 tracing::error!("could not start {}", st.cfg.ffmpeg);
                 break;
             };
             let mut stdout = child.stdout.take().expect("piped stdout");
+            let stderr = child.stderr.take().expect("piped stderr");
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::warn!("ffmpeg: {line}");
+                }
+            });
+            let mut scanner = PtsScanner::new(ts_offset);
             let mut buf = vec![0u8; 188 * 512];
             let mut wrote = false;
             loop {
@@ -222,6 +306,7 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
                         wrote = true;
+                        scanner.feed(&buf[..n]);
                         if tx.send(Ok(Bytes::copy_from_slice(&buf[..n]))).await.is_err() {
                             // Viewer went away.
                             let _ = child.kill().await;
@@ -231,15 +316,23 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
                 }
             }
             let _ = child.wait().await;
-            if !wrote {
-                // Source failed (deleted file, server down): show bars for the
-                // rest of this program instead of retrying in a hot loop.
-                tracing::warn!("channel {channel_id}: no output for program {}", prog.id);
-                if failed == Some(prog.id) {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                }
-                failed = Some(prog.id);
+            // Continue right after the last timestamp actually written; the slack
+            // covers B-frame DTS sitting just before the next program's first PTS.
+            tracing::debug!("channel {channel_id}: program {} ended, offset {ts_offset:.3}, max pts {:?}", prog.id, scanner.max);
+            if let Some(max) = scanner.max {
+                ts_offset = ts_offset.max(max + 0.15);
             }
+            if !wrote && failed != Some(prog.id) {
+                // Source failed (deleted file, server down): show bars for the
+                // rest of this program instead.
+                tracing::warn!("channel {channel_id}: no output for program {}", prog.id);
+                failed = Some(prog.id);
+                continue;
+            }
+            if !wrote {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            cursor = prog.end_ms;
         }
     });
 
@@ -248,4 +341,32 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
         Body::from_stream(ReceiverStream::new(rx)),
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pes_packet(pts: u64) -> Vec<u8> {
+        let mut p = vec![0x47, 0x41, 0x00, 0x10, 0, 0, 1, 0xE0, 0, 0, 0x80, 0x80, 5];
+        p.push(0x21 | ((pts >> 29) & 0x0e) as u8);
+        p.push((pts >> 22) as u8);
+        p.push(0x01 | ((pts >> 14) & 0xfe) as u8);
+        p.push((pts >> 7) as u8);
+        p.push(0x01 | ((pts << 1) & 0xfe) as u8);
+        p.resize(188, 0xff);
+        p
+    }
+
+    #[test]
+    fn scanner_tracks_max_pts_across_chunk_splits() {
+        let mut bytes = pes_packet(90_000 * 12);
+        bytes.extend(pes_packet(90_000 * 15));
+        bytes.extend(pes_packet(90_000 * 14));
+        let mut s = PtsScanner::new(10.0);
+        for chunk in bytes.chunks(100) {
+            s.feed(chunk);
+        }
+        assert_eq!(s.max, Some(15.0));
+    }
 }
