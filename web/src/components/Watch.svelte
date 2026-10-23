@@ -466,8 +466,11 @@
   .mg-now { color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   @media (max-width: 760px) {
-    .banner { left: 10px; right: 10px; bottom: 10px; flex-wrap: wrap; gap: 14px; padding: 14px; }
-    .b-left { width: auto; display: flex; }
+    .banner { left: 10px; right: 10px; bottom: 10px; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }
+    .b-left { width: auto; display: flex; align-items: center; gap: 12px; }
+    .b-left :global(.badge-ch) { width: 58px; height: 42px; font-size: 20px; border-radius: 11px; }
+    .b-chname { text-align: left; }
+    .b-title { font-size: 22px; }
     .b-ctrl { grid-template-columns: repeat(5, 1fr); width: 100%; }
     .b-ctrl .btn { width: 100%; }
     .clock { margin-right: 80px; font-size: 15px; }

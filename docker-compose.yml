@@ -1,0 +1,18 @@
+services:
+  rewindtv:
+    image: ghcr.io/adam-hollister/rewindtv:latest
+    container_name: rewindtv
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    environment:
+      # Time zone for time-of-day blocks and the guide.
+      TZ: America/Chicago
+      # Optional: the address other devices use to reach RewindTV; used in
+      # M3U/XMLTV links. Defaults to whatever host the request came in on.
+      # REWINDTV_PUBLIC_URL: http://192.168.1.20:8420
+      # "copy" (default) remuxes video for IPTV streams; "h264" re-encodes so
+      # picky IPTV players get identical video settings on every program.
+      # REWINDTV_IPTV_VIDEO: copy
+    volumes:
+      - ./data:/data

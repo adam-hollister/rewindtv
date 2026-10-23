@@ -206,7 +206,7 @@
               {#each preview.slice(0, 80) as p}
                 <li class:filler={p.filler}>
                   <span class="tm">{clock(p.start)}</span>
-                  <span class="pt"><b>{p.title}</b>{#if p.subtitle}<span class="dim small"> {p.subtitle}</span>{/if}
+                  <span class="pt"><b>{p.title}</b>{#if p.subtitle}<span class="dim small psub">{p.subtitle}</span>{/if}
                     {#if p.block}<span class="badge">{p.block}</span>{/if}</span>
                   <span class="dim tiny">{duration(p.end - p.start)}</span>
                 </li>
@@ -260,6 +260,7 @@
   .pv li.filler { opacity: 0.5; }
   .tm { font-variant-numeric: tabular-nums; color: var(--text-2); font-weight: 650; }
   .pt { min-width: 0; }
+  .psub { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pt .badge { margin-left: 4px; }
   .save { display: flex; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid var(--line); }
   .spacer { flex: 1; }

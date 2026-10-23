@@ -199,8 +199,8 @@
 
 <div class="toolbar">
   <div class="segmented">
-    <button class:on={!onlyFav} onclick={() => (onlyFav = false)}>All channels</button>
-    <button class:on={onlyFav} onclick={() => (onlyFav = true)}>★ Favorites</button>
+    <button class:on={!onlyFav} onclick={() => (onlyFav = false)}>All<span class="wide"> channels</span></button>
+    <button class:on={onlyFav} onclick={() => (onlyFav = true)}>★<span class="wide"> Favorites</span></button>
   </div>
   <div class="spacer"></div>
   <button class="btn small" onclick={scrollNow}>Now</button>
@@ -263,7 +263,7 @@
                   onfocus={() => (selected = { ch, p })}
                   onkeydown={(e) => cellKey(e, ch, p, ri, pi)}>
                   {#if live}<i class="fill" style:width="{progress(p, now) * 100}%"></i>{/if}
-                  {#if g.width >= 44}
+                  {#if g.width >= (p.filler ? 130 : 44)}
                     <span class="t">{p.title}</span>
                     {#if g.width >= 110}
                       <span class="s">{p.filler ? range(p.start, p.end) : p.subtitle ?? range(p.start, p.end)}</span>
@@ -300,12 +300,12 @@
       radial-gradient(600px 300px at 0% 100%, color-mix(in srgb, var(--c) 22%, transparent), transparent); }
   .hero-inner { position: relative; display: flex; gap: 28px; align-items: flex-end; padding: 36px 32px 28px; max-width: 1280px; min-height: 320px; }
   .poster { width: 150px; aspect-ratio: 2/3; object-fit: cover; border-radius: 12px; box-shadow: var(--shadow); border: 1px solid rgb(255 255 255 / 0.08); flex: none; }
-  .info { display: grid; gap: 10px; max-width: 720px; }
+  .info { display: grid; gap: 10px; max-width: 720px; min-width: 0; }
   .kicker { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text-2); font-size: 14px; flex-wrap: wrap; }
   .chnum { font-family: var(--display); font-size: 13px; color: #111; padding: 2px 8px; border-radius: 6px; }
   .badge.live { color: #fecaca; border-color: rgb(255 77 77 / 0.5); gap: 6px; }
   .hero h1 { font-size: clamp(26px, 3.6vw, 44px); line-height: 1.05; font-weight: 850; text-wrap: balance; }
-  .sub { font-size: 17px; font-weight: 600; color: var(--text); opacity: 0.9; }
+  .sub { font-size: 17px; font-weight: 600; color: var(--text); opacity: 0.9; overflow-wrap: anywhere; }
   .meta { display: flex; gap: 14px; align-items: center; color: var(--text-2); font-size: 14px; font-weight: 600; flex-wrap: wrap; }
   .summary { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 640px; }
   .actions { margin-top: 6px; gap: 18px; }
@@ -358,8 +358,14 @@
 
   .digits { position: fixed; top: 84px; right: 32px; z-index: 50; font-family: var(--display); font-size: 64px; color: var(--accent); text-shadow: 0 4px 24px rgb(0 0 0 / 0.8); }
 
+  .toolbar :global(.segmented button) { white-space: nowrap; }
   @media (max-width: 700px) {
+    .wide { display: none; }
     .hero, .hero-inner { min-height: 0; }
+    .hero h1 { font-size: 26px; }
+    .sub { font-size: 15px; }
+    .actions { flex-wrap: wrap; gap: 12px; }
+    .prog { width: 140px; }
     .hero-inner { padding: 20px 16px; }
     .poster { width: 84px; }
     .summary { display: none; }

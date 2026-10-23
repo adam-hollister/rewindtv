@@ -113,7 +113,8 @@
   .art :global(.badge-ch) { position: relative; }
   .owner { position: absolute; top: 12px; right: 12px; background: rgb(0 0 0 / 0.5); }
   .body { padding: 14px 16px 16px; display: grid; gap: 8px; }
-  .now { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; min-width: 0; }
+  .now :global(.live-dot) { margin: 0 3px; }
   .actions { margin-top: 6px; gap: 6px; }
   .star { border: 0; background: none; font-size: 18px; color: var(--text-3); }
   .star.on { color: var(--accent); }

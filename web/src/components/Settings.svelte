@@ -241,6 +241,7 @@
   .iptv-row { display: grid; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
   .iptv-row:last-child { border-bottom: 0; padding-bottom: 0; }
   .url { display: flex; gap: 8px; align-items: center; }
+  .url .btn { min-width: 116px; }
   code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text-2); }
   .help code { padding: 1px 5px; display: inline; white-space: normal; }
   .maint { margin: 12px 0 16px; }

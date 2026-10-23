@@ -123,10 +123,15 @@ pub async fn image(State(st): State<AppState>, Path(source): Path<i64>, Query(q)
         return Err(ApiError::BadRequest("bad image path".into()));
     }
     let src = st.source(source).await?;
-    let url = src.image_url(&q.p, q.w.unwrap_or(400).clamp(64, 1920));
-    let res = st.http.get(url).headers(src.auth_headers()).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
+    let resized = src.image_url(&q.p, q.w.unwrap_or(400).clamp(64, 1920));
+    let mut res = st.http.get(resized).headers(src.auth_headers()).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
     if !res.status().is_success() {
-        return Ok(StatusCode::NOT_FOUND.into_response());
+        // Fall back to the original image if the server's resizer fails.
+        let original = src.base().join(&q.p).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        res = st.http.get(original).headers(src.auth_headers()).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
+        if !res.status().is_success() {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        }
     }
     let ctype = res.headers().get(header::CONTENT_TYPE).cloned();
     let mut out = Response::builder().header(header::CACHE_CONTROL, "public, max-age=86400");

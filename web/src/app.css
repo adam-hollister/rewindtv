@@ -58,9 +58,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 650; font-size: 14px; white-space: nowrap;
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
+a.btn { text-decoration: none; color: var(--text); }
 .btn:hover { background: #232a3d; border-color: #414b64; }
 .btn:active { transform: scale(0.97); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary, a.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { background: var(--accent-2); }
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.ghost:hover { background: var(--panel-2); }
@@ -105,7 +106,7 @@ label.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color:
 .chip.neg.on { background: rgb(248 113 113 / 0.12); border-color: rgb(248 113 113 / 0.5); color: #fca5a5; }
 
 .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 750; letter-spacing: 0.03em; background: var(--panel-2); color: var(--text-2); border: 1px solid var(--line-2); }
-.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px rgb(255 77 77 / 0.25); animation: pulse 1.6s infinite; }
+.live-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px rgb(255 77 77 / 0.25); animation: pulse 1.6s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgb(255 77 77 / 0); } }
 
 .bar { height: 4px; border-radius: 4px; background: rgb(255 255 255 / 0.12); overflow: hidden; }

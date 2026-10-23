@@ -1,0 +1,17 @@
+# TrueNAS SCALE (24.10 "Electric Eel" or newer)
+# Apps → Discover Apps → ⋮ → Install via YAML → paste this file.
+#
+# 1. Create a dataset for the app's database first, e.g. /mnt/tank/apps/rewindtv
+#    and change the host path below to match.
+# 2. Set TZ to your time zone.
+services:
+  rewindtv:
+    image: ghcr.io/adam-hollister/rewindtv:latest
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    environment:
+      TZ: America/Chicago
+      # REWINDTV_PUBLIC_URL: http://truenas.local:8420
+    volumes:
+      - /mnt/tank/apps/rewindtv:/data

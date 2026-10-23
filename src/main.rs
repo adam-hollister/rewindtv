@@ -26,6 +26,9 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = Config::from_env()?;
+    if std::env::args().nth(1).as_deref() == Some("health") {
+        return health(cfg.port).await;
+    }
     let db = db::open(&cfg.data_dir).await?;
     let http = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -50,6 +53,17 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("RewindTV listening on http://{addr} (timezone {})", cfg.tz);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
+    Ok(())
+}
+
+/// `rewindtv health` — used by the container HEALTHCHECK.
+async fn health(port: u16) -> anyhow::Result<()> {
+    reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/api/status"))
+        .timeout(Duration::from_secs(4))
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
