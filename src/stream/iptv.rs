@@ -370,3 +370,78 @@ mod tests {
         assert_eq!(s.max, Some(15.0));
     }
 }
+
+// --- HDHomeRun emulation (so Plex Live TV can add RewindTV as a tuner) --------
+
+fn hdhr_base(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> String {
+    let base = base_url(st, headers);
+    match user {
+        Some(u) => format!("{base}/hdhr/{u}"),
+        None => base,
+    }
+}
+
+fn hdhr_user(st: &AppState, user: Option<i64>) -> i64 {
+    user.unwrap_or(st.cfg.hdhr_profile)
+}
+
+async fn discover_json(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> Response {
+    let base = hdhr_base(st, headers, user);
+    let uid = hdhr_user(st, user);
+    axum::Json(serde_json::json!({
+        "FriendlyName": if uid > 0 { format!("RewindTV (profile {uid})") } else { "RewindTV".to_string() },
+        "Manufacturer": "Silicondust",
+        "ModelNumber": "HDTC-2US",
+        "FirmwareName": "hdhomeruntc_atsc",
+        "FirmwareVersion": "20200101",
+        "DeviceID": format!("52574{uid:03}"),
+        "DeviceAuth": "rewindtv",
+        "TunerCount": 6,
+        "BaseURL": base,
+        "LineupURL": format!("{base}/lineup.json"),
+    }))
+    .into_response()
+}
+
+async fn lineup_json(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> ApiResult<Response> {
+    let base = base_url(st, headers);
+    let uid = hdhr_user(st, user);
+    let channels = guide::lineup(&st.db, (uid > 0).then_some(uid), false).await?;
+    let list: Vec<_> = channels
+        .iter()
+        .map(|c| serde_json::json!({ "GuideNumber": c.number.to_string(), "GuideName": c.name, "URL": format!("{base}/iptv/stream/{}.ts", c.id) }))
+        .collect();
+    Ok(axum::Json(list).into_response())
+}
+
+fn lineup_status() -> Response {
+    axum::Json(serde_json::json!({ "ScanInProgress": 0, "ScanPossible": 1, "Source": "Cable", "SourceList": ["Cable"] })).into_response()
+}
+
+fn device_xml(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> Response {
+    let base = hdhr_base(st, headers, user);
+    let uid = hdhr_user(st, user);
+    let xml = format!(
+        r#"<root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><URLBase>{base}</URLBase><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><friendlyName>RewindTV</friendlyName><manufacturer>Silicondust</manufacturer><modelName>HDTC-2US</modelName><modelNumber>HDTC-2US</modelNumber><serialNumber/><UDN>uuid:52574{uid:03}-rewindtv</UDN></device></root>"#
+    );
+    ([(header::CONTENT_TYPE, "application/xml")], xml).into_response()
+}
+
+pub async fn hdhr_root(State(st): State<AppState>, uri: axum::http::Uri, headers: HeaderMap) -> ApiResult<Response> {
+    hdhr(&st, &headers, None, uri.path().trim_start_matches('/')).await
+}
+
+pub async fn hdhr_profile(State(st): State<AppState>, Path((user, file)): Path<(i64, String)>, headers: HeaderMap) -> ApiResult<Response> {
+    hdhr(&st, &headers, Some(user), &file).await
+}
+
+async fn hdhr(st: &AppState, headers: &HeaderMap, user: Option<i64>, file: &str) -> ApiResult<Response> {
+    Ok(match file {
+        "discover.json" => discover_json(st, headers, user).await,
+        "lineup.json" => lineup_json(st, headers, user).await?,
+        "lineup_status.json" => lineup_status(),
+        "device.xml" => device_xml(st, headers, user),
+        "lineup.post" => axum::Json(serde_json::json!({})).into_response(),
+        _ => return Err(ApiError::NotFound),
+    })
+}

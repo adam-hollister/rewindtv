@@ -158,7 +158,10 @@
 
   <section class="card pad">
     <h2>Watch in other apps (IPTV)</h2>
-    <p class="muted small sub">Add RewindTV as a tuner in <b>Plex Live TV</b>, <b>Jellyfin Live TV</b>, TiviMate, VLC or any IPTV app. Use the M3U playlist plus the XMLTV guide for the profile whose lineup you want.</p>
+    <p class="muted small sub">
+      <b>Jellyfin Live TV</b>, TiviMate, VLC and other IPTV apps: add the M3U playlist as a tuner and the XMLTV URL as the guide.
+      <b>Plex Live TV</b>: RewindTV acts as an HDHomeRun tuner. In Plex, open <i>Settings → Live TV &amp; DVR → Set up</i>, enter <code>{location.host}</code> if it isn't found automatically, then pick XMLTV for the guide.
+    </p>
     <div class="iptv">
       {#each [{ id: 0, name: 'Shared channels only' }, ...session.users] as u}
         {@const m3u = `${origin}/iptv/${u.id}/playlist.m3u`}

@@ -38,4 +38,11 @@ pub fn router() -> Router<AppState> {
         .route("/iptv/{user}/playlist.m3u", get(iptv::playlist))
         .route("/iptv/{user}/xmltv.xml", get(iptv::xmltv))
         .route("/iptv/stream/{file}", get(iptv::stream))
+        // HDHomeRun emulation: Plex probes these at the server root.
+        .route("/discover.json", get(iptv::hdhr_root))
+        .route("/lineup.json", get(iptv::hdhr_root))
+        .route("/lineup_status.json", get(iptv::hdhr_root))
+        .route("/device.xml", get(iptv::hdhr_root))
+        .route("/lineup.post", get(iptv::hdhr_root).post(iptv::hdhr_root))
+        .route("/hdhr/{user}/{file}", get(iptv::hdhr_profile).post(iptv::hdhr_profile))
 }

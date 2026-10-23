@@ -15,6 +15,8 @@ pub struct Config {
     pub iptv_video: String,
     pub ffmpeg: String,
     pub sync_hours: u64,
+    /// Profile whose lineup the root-level HDHomeRun tuner exposes (0 = shared only).
+    pub hdhr_profile: i64,
 }
 
 fn env(key: &str) -> Option<String> {
@@ -35,6 +37,7 @@ impl Config {
             iptv_video: env("REWINDTV_IPTV_VIDEO").unwrap_or_else(|| "copy".into()),
             ffmpeg: env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
             sync_hours: env("REWINDTV_SYNC_HOURS").and_then(|h| h.parse().ok()).unwrap_or(6),
+            hdhr_profile: env("REWINDTV_HDHR_PROFILE").and_then(|h| h.parse().ok()).unwrap_or(0),
         })
     }
 }
