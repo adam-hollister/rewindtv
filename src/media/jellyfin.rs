@@ -150,7 +150,7 @@ impl Jellyfin {
             .collect())
     }
 
-    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, offset_ms: i64, session: &str) -> Url {
+    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, _offset_ms: i64, session: &str) -> Url {
         let mut u = self.url(&format!("/Videos/{item_key}/master.m3u8"));
         u.query_pairs_mut()
             .append_pair("MediaSourceId", part_key.unwrap_or(item_key))
@@ -162,8 +162,9 @@ impl Jellyfin {
             .append_pair("MaxStreamingBitrate", "40000000")
             .append_pair("SegmentContainer", "ts")
             .append_pair("MinSegments", "1")
-            .append_pair("BreakOnNonKeyFrames", "true")
-            .append_pair("StartTimeTicks", &(offset_ms * TICKS_PER_MS).to_string());
+            .append_pair("BreakOnNonKeyFrames", "true");
+        // Jellyfin serves a full-length playlist and rejects StartTimeTicks on
+        // segment requests, so the player seeks to the live offset instead.
         u
     }
 

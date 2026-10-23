@@ -148,7 +148,7 @@ impl Picker<'_> {
             let len = groups[&key].len();
             ps.block_left = match self.ordering {
                 Ordering::Episodic => 1,
-                Ordering::Block => self.block_size.max(1),
+                Ordering::Block => self.block_size.clamp(1, len),
                 // Rest of the show from wherever its cursor is.
                 _ => len - ps.cursors.get(&key).copied().unwrap_or(0) % len,
             };
@@ -233,6 +233,20 @@ mod tests {
             assert_eq!(chunk[1].episode.unwrap(), chunk[0].episode.unwrap() + 1);
         }
         assert_ne!(out[1].show_key, out[2].show_key);
+    }
+
+    #[test]
+    fn block_never_repeats_a_lone_movie() {
+        let mut items = library();
+        items.push(Item { id: 99, is_movie: true, duration_ms: 1_000, ..Default::default() });
+        let pool: Vec<usize> = (0..items.len()).collect();
+        let p = Picker { ordering: Ordering::Block, block_size: 3, items: &items, pool: &pool, avoid_repeat_ms: 0 };
+        let mut st = ChannelState::default();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(5);
+        let ids: Vec<i64> = (0..40).map(|i| items[p.next("d", &mut st, i, &mut rng).unwrap()].id).collect();
+        for w in ids.windows(2) {
+            assert!(!(w[0] == 99 && w[1] == 99));
+        }
     }
 
     #[test]
