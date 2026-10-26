@@ -10,8 +10,10 @@ pub struct Config {
     pub tz: Tz,
     /// Base URL used in M3U/XMLTV links. Derived from the request when unset.
     pub public_url: Option<String>,
-    /// "copy" remuxes the source video for IPTV streams; "h264" re-encodes so
-    /// every program has identical codec parameters.
+    /// How Live TV / IPTV streams get their video:
+    /// "server" (default) has Plex/Jellyfin transcode every program to the same
+    /// 1080p H.264 + AAC; "copy" passes original files through untouched;
+    /// "h264" re-encodes original files inside RewindTV.
     pub iptv_video: String,
     pub ffmpeg: String,
     pub sync_hours: u64,
@@ -34,7 +36,7 @@ impl Config {
             port: env("REWINDTV_PORT").and_then(|p| p.parse().ok()).unwrap_or(8420),
             tz,
             public_url: env("REWINDTV_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),
-            iptv_video: env("REWINDTV_IPTV_VIDEO").unwrap_or_else(|| "copy".into()),
+            iptv_video: env("REWINDTV_IPTV_VIDEO").unwrap_or_else(|| "server".into()),
             ffmpeg: env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
             sync_hours: env("REWINDTV_SYNC_HOURS").and_then(|h| h.parse().ok()).unwrap_or(6),
             hdhr_profile: env("REWINDTV_HDHR_PROFILE").and_then(|h| h.parse().ok()).unwrap_or(0),

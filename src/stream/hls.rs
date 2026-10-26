@@ -99,7 +99,7 @@ pub async fn proxy(
         _ => return Err(ApiError::NotFound),
     };
 
-    let mut req = st.http.get(upstream.clone()).headers(session.source.auth_headers());
+    let mut req = st.http.get(upstream.clone()).headers(session.source.session_headers(&sid));
     if let Some(range) = req_headers.get(header::RANGE) {
         req = req.header(header::RANGE, range);
     }
@@ -132,9 +132,50 @@ pub async fn proxy(
     Ok(out.body(Body::from_stream(res.bytes_stream())).map_err(anyhow::Error::from)?)
 }
 
+/// URI of the first variant in a master playlist, if it is one.
+pub fn first_variant(text: &str) -> Option<&str> {
+    let mut lines = text.lines().map(str::trim);
+    lines.find(|l| l.starts_with("#EXT-X-STREAM-INF"))?;
+    lines.find(|l| !l.is_empty() && !l.starts_with('#'))
+}
+
+/// Sum of segment durations in a media playlist.
+pub fn extinf_total(text: &str) -> f64 {
+    text.lines()
+        .filter_map(|l| l.trim().strip_prefix("#EXTINF:"))
+        .filter_map(|r| r.split(',').next()?.trim().parse::<f64>().ok())
+        .sum()
+}
+
+/// Length in seconds of a session's playlist. Used to tell whether the server
+/// started at the requested offset (Plex) or returned the whole program
+/// (Jellyfin), in which case the reader has to seek.
+pub async fn playlist_seconds(st: &AppState, sid: &str) -> Option<f64> {
+    let s = st.sessions.touch(sid).await?;
+    let headers = s.source.session_headers(sid);
+    let get = |u: Url| {
+        let req = st.http.get(u).headers(headers.clone());
+        async move { req.send().await.ok()?.error_for_status().ok()?.text().await.ok() }
+    };
+    let master = get(s.master.clone()).await?;
+    let media = match first_variant(&master) {
+        Some(v) => get(s.master.join(v).ok()?).await?,
+        None => master,
+    };
+    Some(extinf_total(&media))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playlist_helpers() {
+        let master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nmain.m3u8?x=1\n";
+        assert_eq!(first_variant(master), Some("main.m3u8?x=1"));
+        assert_eq!(first_variant("#EXTM3U\n#EXTINF:6,\na.ts\n"), None);
+        assert_eq!(extinf_total("#EXTINF:6.000000, nodesc\na.ts\n#EXTINF:4.5,\nb.ts\n"), 10.5);
+    }
 
     #[test]
     fn rewrites_relative_and_absolute_uris_without_tokens() {

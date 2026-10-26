@@ -8,7 +8,7 @@ use axum::routing::{get, patch, post, put};
 use axum::Router;
 
 use crate::state::AppState;
-use crate::stream::{hls, iptv};
+use crate::stream::{hls, iptv, tuner};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -37,7 +37,7 @@ pub fn router() -> Router<AppState> {
         .route("/stream/{sid}/{rest}", get(hls::proxy))
         .route("/iptv/{user}/playlist.m3u", get(iptv::playlist))
         .route("/iptv/{user}/xmltv.xml", get(iptv::xmltv))
-        .route("/iptv/stream/{file}", get(iptv::stream))
+        .route("/iptv/stream/{file}", get(tuner::stream))
         // HDHomeRun emulation: Plex probes these at the server root.
         .route("/discover.json", get(iptv::hdhr_root))
         .route("/lineup.json", get(iptv::hdhr_root))

@@ -81,11 +81,20 @@ impl Source {
 
     /// HLS master playlist for browser playback, transcoded/remuxed by the
     /// media server to h264/aac. `offset_ms` is a hint; some servers return a
-    /// full-length playlist and the client seeks instead.
+    /// full-length playlist and the player seeks instead.
     pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, offset_ms: i64, session: &str) -> Url {
         match self {
             Source::Plex(p) => p.hls_url(item_key, offset_ms, session),
-            Source::Jellyfin(j) => j.hls_url(item_key, part_key, offset_ms, session),
+            Source::Jellyfin(j) => j.hls_url(item_key, part_key, session),
+        }
+    }
+
+    /// HLS for the Live TV tuner feed: always transcoded to identical
+    /// 1080p H.264 + stereo AAC so programs can be stitched together.
+    pub fn tuner_url(&self, item_key: &str, part_key: Option<&str>, offset_ms: i64, session: &str) -> Url {
+        match self {
+            Source::Plex(p) => p.tuner_url(item_key, offset_ms, session),
+            Source::Jellyfin(j) => j.tuner_url(item_key, part_key, session),
         }
     }
 
@@ -127,6 +136,14 @@ impl Source {
     pub fn auth_headers(&self) -> HeaderMap {
         match self {
             Source::Plex(p) => p.auth_headers(),
+            Source::Jellyfin(j) => j.auth_headers(),
+        }
+    }
+
+    /// Auth headers for requests that belong to one playback session.
+    pub fn session_headers(&self, session: &str) -> HeaderMap {
+        match self {
+            Source::Plex(p) => p.session_headers(session),
             Source::Jellyfin(j) => j.auth_headers(),
         }
     }

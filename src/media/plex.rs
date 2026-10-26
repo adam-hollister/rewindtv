@@ -113,8 +113,28 @@ impl Plex {
             .collect())
     }
 
+    /// Browser playback: remux when the source is already H.264, transcode otherwise.
     pub fn hls_url(&self, item_key: &str, offset_ms: i64, session: &str) -> Url {
+        self.transcode_url(item_key, offset_ms, session, false)
+    }
+
+    /// Live TV tuner feed: always a fresh 1080p H.264 + stereo AAC transcode,
+    /// so every program has identical codec settings (and Plex Pass hardware
+    /// acceleration does the work).
+    pub fn tuner_url(&self, item_key: &str, offset_ms: i64, session: &str) -> Url {
+        self.transcode_url(item_key, offset_ms, session, true)
+    }
+
+    fn transcode_url(&self, item_key: &str, offset_ms: i64, session: &str, uniform: bool) -> Url {
         let mut u = self.url("/video/:/transcode/universal/start.m3u8");
+        let mut profile = String::from(
+            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac)",
+        );
+        if uniform {
+            profile.push_str(
+                "+add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)",
+            );
+        }
         u.query_pairs_mut()
             .append_pair("path", &format!("/library/metadata/{item_key}"))
             .append_pair("mediaIndex", "0")
@@ -123,30 +143,43 @@ impl Plex {
             .append_pair("offset", &(offset_ms / 1000).to_string())
             .append_pair("fastSeek", "1")
             .append_pair("directPlay", "0")
-            .append_pair("directStream", "1")
+            .append_pair("directStream", if uniform { "0" } else { "1" })
             .append_pair("directStreamAudio", "0")
             .append_pair("videoQuality", "100")
-            .append_pair("maxVideoBitrate", "20000")
+            .append_pair("maxVideoBitrate", if uniform { "8000" } else { "20000" })
             .append_pair("videoResolution", "1920x1080")
             .append_pair("audioBoost", "100")
             .append_pair("location", "lan")
             .append_pair("session", session)
             .append_pair("X-Plex-Session-Identifier", session)
-            .append_pair("X-Plex-Client-Identifier", &format!("{CLIENT_ID}-{session}"))
+            .append_pair("X-Plex-Client-Identifier", &Self::client_id(session))
             .append_pair("X-Plex-Product", "RewindTV")
+            .append_pair("X-Plex-Device-Name", "RewindTV")
             .append_pair("X-Plex-Platform", "Chrome")
-            .append_pair(
-                "X-Plex-Client-Profile-Extra",
-                "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac)",
-            );
+            .append_pair("X-Plex-Client-Profile-Extra", &profile);
         u
+    }
+
+    /// Each playback session gets its own client id; Plex ties transcodes to it.
+    pub fn client_id(session: &str) -> String {
+        format!("{CLIENT_ID}-{session}")
+    }
+
+    /// Auth headers for requests belonging to one playback session.
+    pub fn session_headers(&self, session: &str) -> HeaderMap {
+        let mut h = self.auth_headers();
+        if let Ok(v) = HeaderValue::from_str(&Self::client_id(session)) {
+            h.insert("X-Plex-Client-Identifier", v);
+        }
+        h
     }
 
     /// Newer Plex servers want a transcode decision before `start.m3u8`.
     pub async fn decision(&self, hls: &Url) -> anyhow::Result<()> {
         let mut u = hls.clone();
         u.set_path(&hls.path().replace("start.m3u8", "decision"));
-        self.http.get(u).headers(self.auth_headers()).header(ACCEPT, "application/json").send().await?;
+        let session = hls.query_pairs().find(|(k, _)| k == "session").map(|(_, v)| v.into_owned()).unwrap_or_default();
+        self.http.get(u).headers(self.session_headers(&session)).header(ACCEPT, "application/json").send().await?;
         Ok(())
     }
 
@@ -159,7 +192,7 @@ impl Plex {
     pub async fn stop(&self, session: &str) -> anyhow::Result<()> {
         self.http
             .get(self.url("/video/:/transcode/universal/stop"))
-            .headers(self.auth_headers())
+            .headers(self.session_headers(session))
             .query(&[("session", session)])
             .send()
             .await?;
@@ -252,6 +285,21 @@ mod tests {
         assert_eq!(item.year, Some(1994));
         assert_eq!(item.part_key.as_deref(), Some("/library/parts/5/1/file.mkv"));
         assert_eq!((item.season, item.episode), (Some(1), Some(1)));
+    }
+
+    #[test]
+    fn tuner_url_forces_uniform_transcode() {
+        let p = Plex::new(reqwest::Client::new(), Url::parse("http://nas:32400").unwrap(), "tok".into());
+        let q: HashMap<String, String> = p.tuner_url("42", 90_500, "abc").query_pairs().into_owned().collect();
+        assert_eq!(q["path"], "/library/metadata/42");
+        assert_eq!(q["offset"], "90");
+        assert_eq!(q["directStream"], "0");
+        assert_eq!(q["videoResolution"], "1920x1080");
+        assert_eq!(q["X-Plex-Client-Identifier"], "rewindtv-abc");
+        assert!(q["X-Plex-Client-Profile-Extra"].contains("audio.channels&value=2"));
+        assert!(!q.contains_key("X-Plex-Token"), "token must not be in URLs");
+        let browser: HashMap<String, String> = p.hls_url("42", 0, "abc").query_pairs().into_owned().collect();
+        assert_eq!(browser["directStream"], "1");
     }
 
     #[test]

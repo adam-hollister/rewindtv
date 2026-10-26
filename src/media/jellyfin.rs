@@ -150,7 +150,18 @@ impl Jellyfin {
             .collect())
     }
 
-    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, _offset_ms: i64, session: &str) -> Url {
+    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, session: &str) -> Url {
+        self.transcode_url(item_key, part_key, session, false)
+    }
+
+    /// Live TV tuner feed: always 1080p H.264 + stereo AAC.
+    pub fn tuner_url(&self, item_key: &str, part_key: Option<&str>, session: &str) -> Url {
+        self.transcode_url(item_key, part_key, session, true)
+    }
+
+    // Jellyfin serves a full-length playlist and rejects StartTimeTicks on
+    // segment requests, so players seek to the live offset themselves.
+    fn transcode_url(&self, item_key: &str, part_key: Option<&str>, session: &str, uniform: bool) -> Url {
         let mut u = self.url(&format!("/Videos/{item_key}/master.m3u8"));
         u.query_pairs_mut()
             .append_pair("MediaSourceId", part_key.unwrap_or(item_key))
@@ -159,12 +170,21 @@ impl Jellyfin {
             .append_pair("VideoCodec", "h264")
             .append_pair("AudioCodec", "aac")
             .append_pair("TranscodingMaxAudioChannels", "2")
-            .append_pair("MaxStreamingBitrate", "40000000")
+            .append_pair("MaxStreamingBitrate", if uniform { "8000000" } else { "40000000" })
             .append_pair("SegmentContainer", "ts")
             .append_pair("MinSegments", "1")
             .append_pair("BreakOnNonKeyFrames", "true");
-        // Jellyfin serves a full-length playlist and rejects StartTimeTicks on
-        // segment requests, so the player seeks to the live offset instead.
+        if uniform {
+            u.query_pairs_mut()
+                .append_pair("MaxWidth", "1920")
+                .append_pair("MaxHeight", "1080")
+                // Without an explicit bitrate Jellyfin derives the output size
+                // from the source bitrate and can pick tiny resolutions.
+                .append_pair("VideoBitrate", "6000000")
+                .append_pair("AudioBitrate", "192000")
+                .append_pair("AllowVideoStreamCopy", "false")
+                .append_pair("AllowAudioStreamCopy", "false");
+        }
         u
     }
 
