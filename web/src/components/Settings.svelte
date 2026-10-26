@@ -3,12 +3,17 @@
   import { api, type Source, type Status, type SyncStatus } from '../lib/api';
   import { session, loadUsers, selectUser, toast } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
+  import PlexSignIn from './PlexSignIn.svelte';
+  import Diagnose from './Diagnose.svelte';
 
   let sources = $state<Source[]>([]);
   let status = $state<Status | null>(null);
   let sync = $state<SyncStatus | null>(null);
   let adding = $state(false);
-  let form = $state({ kind: 'jellyfin' as 'plex' | 'jellyfin', url: '', token: '', name: '' });
+  let form = $state({ kind: 'plex' as 'plex' | 'jellyfin', url: '', token: '', name: '' });
+  let manual = $state(false);
+  let checking = $state<Source | null>(null);
+  const tunerHost = location.host;
   let testing = $state<string | null>(null);
   let busy = $state(false);
   let poll: ReturnType<typeof setInterval> | undefined;
@@ -53,7 +58,8 @@
       const r = await api.addSource({ ...form, name: form.name || undefined });
       toast(`Added ${r.name}. Syncing your library…`);
       adding = false;
-      form = { kind: 'jellyfin', url: '', token: '', name: '' };
+      form = { kind: 'plex', url: '', token: '', name: '' };
+      manual = false;
       testing = null;
       await load();
       syncNow();
@@ -127,6 +133,7 @@
               <div class="dim small">{s.url} · synced {ago(s.last_sync)}</div>
               {#if s.last_error}<div class="err small">{s.last_error}</div>{/if}
             </div>
+            <button class="btn small" onclick={() => (checking = s)}>Run check</button>
             <button class="btn small ghost danger" onclick={() => removeSource(s)}>Remove</button>
           </div>
           <div class="libs">
@@ -156,11 +163,24 @@
     </div>
   </section>
 
+  <section class="card pad plexlive">
+    <div class="row"><span class="logo plex">PLEX</span><h2>Watch in Plex (Live TV)</h2></div>
+    <p class="muted small sub">RewindTV shows up in Plex as a TV tuner, so your channels appear in the Live TV guide on every Plex app — TVs, phones, Roku, Apple TV. Requires Plex Pass.</p>
+    <ol class="steps">
+      <li>In Plex Web, open <b>Settings → Live TV &amp; DVR → Set Up Plex DVR</b>.</li>
+      <li>If RewindTV isn't found automatically, choose <i>enter its network address manually</i> and type
+        <span class="url inline"><code>{tunerHost}</code><button class="btn small" onclick={() => copy(tunerHost)}>Copy</button></span></li>
+      <li>Continue to the guide step and pick <i>“Have an XMLTV guide on your server? Click here to use that instead.”</i> Paste:
+        <span class="url inline"><code>{origin}/iptv/0/xmltv.xml</code><button class="btn small" onclick={() => copy(`${origin}/iptv/0/xmltv.xml`)}>Copy</button></span></li>
+      <li>Plex matches channels by number — check the list and finish. After you add or renumber channels here, use <b>Scan channels</b> on the tuner in Plex.</li>
+    </ol>
+    <p class="tiny dim">The Plex tuner carries the shared channels. Every program is converted by your Plex server to the same 1080p H.264 format (hardware accelerated with Plex Pass), so mixed libraries change channels and shows smoothly.</p>
+  </section>
+
   <section class="card pad">
-    <h2>Watch in other apps (IPTV)</h2>
+    <h2>Other IPTV apps</h2>
     <p class="muted small sub">
-      <b>Jellyfin Live TV</b>, TiviMate, VLC and other IPTV apps: add the M3U playlist as a tuner and the XMLTV URL as the guide.
-      <b>Plex Live TV</b>: RewindTV acts as an HDHomeRun tuner. In Plex, open <i>Settings → Live TV &amp; DVR → Set up</i>, enter <code>{location.host}</code> if it isn't found automatically, then pick XMLTV for the guide.
+      <b>Jellyfin Live TV</b>, TiviMate, VLC and similar apps: add the M3U playlist as a tuner and the XMLTV URL as the guide, using the profile whose lineup you want.
     </p>
     <div class="iptv">
       {#each [{ id: 0, name: 'Shared channels only' }, ...session.users] as u}
@@ -193,13 +213,25 @@
   </section>
 </div>
 
+{#if checking}
+  <Diagnose id={checking.id} name={checking.name} onclose={() => (checking = null)} />
+{/if}
+
 {#if adding}
   <Modal title="Add a media server" onclose={() => (adding = false)}>
     <div class="form">
       <div class="segmented">
-        <button class:on={form.kind === 'jellyfin'} onclick={() => (form.kind = 'jellyfin')}>Jellyfin</button>
         <button class:on={form.kind === 'plex'} onclick={() => (form.kind = 'plex')}>Plex</button>
+        <button class:on={form.kind === 'jellyfin'} onclick={() => (form.kind = 'jellyfin')}>Jellyfin</button>
       </div>
+      {#if form.kind === 'plex' && !manual}
+        {#if form.url && form.token}
+          <p class="ok small">✓ Ready to add <b>{form.name || 'your Plex server'}</b> at {form.url}</p>
+        {:else}
+          <PlexSignIn onpick={(url, token, name) => { form.url = url; form.token = token; form.name = name; }} />
+        {/if}
+        <button class="btn small ghost linkish" onclick={() => (manual = true)}>Enter a server address and token instead</button>
+      {:else}
       <label class="field">Server URL<input type="url" bind:value={form.url} placeholder={form.kind === 'plex' ? 'http://192.168.1.10:32400' : 'http://192.168.1.10:8096'} /></label>
       <label class="field">{form.kind === 'plex' ? 'Plex token' : 'API key'}<input type="password" bind:value={form.token} autocomplete="off" /></label>
       <p class="help small muted">
@@ -210,6 +242,7 @@
         {/if}
       </p>
       <label class="field">Display name <span class="dim">(optional)</span><input type="text" bind:value={form.name} /></label>
+      {/if}
       {#if testing}<p class="small" class:err={testing.startsWith('✕')} class:ok={testing.startsWith('✓')}>{testing}</p>{/if}
     </div>
     {#snippet footer()}
@@ -253,4 +286,10 @@
   .stats b { font-size: 18px; }
   .stats span { color: var(--text-3); font-size: 12px; }
   .form { display: grid; gap: 14px; }
+  .linkish { justify-self: start; color: var(--text-2); font-weight: 600; }
+  .plexlive { border-color: rgb(229 160 13 / 0.35); background: linear-gradient(180deg, rgb(229 160 13 / 0.07), var(--panel) 40%); }
+  .plexlive .row { gap: 12px; }
+  .steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 10px; color: var(--text); }
+  .steps li { padding-left: 4px; }
+  .url.inline { display: flex; margin-top: 6px; max-width: 560px; }
 </style>

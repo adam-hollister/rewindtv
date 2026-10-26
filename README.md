@@ -35,7 +35,9 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Time-of-day blocks.** Saturday-morning cartoons, prime-time sitcoms, late-night movies. A weekly timeline shows the layout, and blocks start on time.
 - **Auto-create.** Build channels in one click from your genres, decades, collections, studios, or "Show 24/7" marathons.
 - **Profiles.** A Netflix-style "Who's watching?" screen. Each profile gets its own favorites, hidden channels and private channels; shared channels show for everyone. There are no passwords, since this is meant for your home network.
-- **Watch anywhere (IPTV).** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps. RewindTV also acts as an HDHomeRun tuner for **Plex Live TV**. Channels are continuous MPEG-TS streams that roll from one program to the next.
+- **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
+- **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
+- **Sign in with Plex and a built-in check.** Sign in with Plex instead of hunting for a token. A one-click check tests every playback path on your real server.
 - **Light on your NAS.** Browser playback uses your media server's own transcoder, including hardware acceleration if you have it. RewindTV proxies the stream, so server tokens never reach the browser. Abandoned streams are stopped automatically when someone channel-surfs.
 
 ## Install on TrueNAS SCALE
@@ -59,30 +61,48 @@ docker compose up -d   # uses docker-compose.yml in this repo
 
 ## Connecting your media servers
 
-| Server | URL example | Credential |
-| --- | --- | --- |
-| Jellyfin | `http://192.168.1.10:8096` | **Dashboard → API Keys → +**, then paste the key |
-| Plex | `http://192.168.1.10:32400` | Your Plex token: open any item in Plex Web → **⋯ → Get Info → View XML**, and copy the `X-Plex-Token=` value from the URL |
+**Plex:** go to **Settings → Add server → Sign in with Plex**.
+1. Enter the 4-character code at [plex.tv/link](https://plex.tv/link).
+2. Pick your server. RewindTV tests each of its addresses and uses the best local one.
 
-Libraries sync on startup and every 6 hours. **Settings → Sync now** syncs immediately. You can switch individual libraries off.
+If you'd rather paste a token: open any item in Plex Web → **⋯ → Get Info → View XML**, and copy the `X-Plex-Token=` value from the URL.
 
-## Using it as a tuner in Plex / Jellyfin / IPTV apps
+**Jellyfin:** use your server URL (e.g. `http://192.168.1.10:8096`) and an API key from **Dashboard → API Keys → +**.
 
-**Settings → Watch in other apps** lists two URLs per profile:
+Libraries sync on startup and every 6 hours. **Settings → Sync now** syncs immediately, and you can switch individual libraries off.
+
+**Settings → Run check** tests a server end to end against a real item from your library:
+- connection and library sync
+- artwork
+- browser playback
+- the Live TV transcode
+- direct file access
+
+If anything fails, **Copy report** gives you the exact error to share.
+
+## Watching in Plex (Live TV)
+
+RewindTV presents itself to Plex as an **HDHomeRun tuner**, so your channels show up in Plex's Live TV guide on every Plex app. This requires Plex Pass.
+
+1. In Plex Web open **Settings → Live TV & DVR → Set Up Plex DVR**.
+2. If RewindTV isn't found automatically, choose *enter its network address manually* and type `<truenas-ip>:8420`.
+3. At the guide step choose **“Have an XMLTV guide on your server? Click here to use that instead”** and enter `http://<truenas-ip>:8420/iptv/0/xmltv.xml`.
+4. Plex matches channels by number; confirm and finish. After adding or renumbering channels in RewindTV, run **Scan channels** on the tuner in Plex.
+
+How the Plex tuner works:
+- **Uniform video.** Every program is converted *by your Plex server* to the same 1080p H.264 + stereo AAC, using Plex Pass hardware acceleration when your server has it. A library mixing HEVC, H.264, 5.1 audio and so on still plays as one smooth channel. RewindTV itself only stitches programs together, so it uses almost no CPU.
+- **No stalls between shows.** The next program's transcode starts a few seconds early, and timestamps are rewritten so shows join seamlessly.
+- **What Plex sees.** The tuner advertises 6 tuners (`REWINDTV_TUNERS`) and exposes the shared channels (`REWINDTV_HDHR_PROFILE=<id>` picks a profile instead). The XMLTV guide covers 7 days.
+- **Automatic discovery.** Plex finds RewindTV on the network via HDHomeRun discovery (UDP 65001). This only works with host networking; see the TrueNAS YAML. With the default bridge network, use the manual address in step 2.
+
+## Other IPTV apps (Jellyfin Live TV, TiviMate, VLC)
+
+**Settings → Other IPTV apps** lists two URLs per profile (profile `0` is the shared channels only):
 
 - `http://<host>:8420/iptv/<profile>/playlist.m3u`
 - `http://<host>:8420/iptv/<profile>/xmltv.xml`
 
-Profile `0` is the shared channels only.
-
-- **Jellyfin:** **Dashboard → Live TV → Tuner devices → +** (M3U Tuner), then **TV guide data providers → XMLTV**.
-- **Plex:** RewindTV also emulates an **HDHomeRun** tuner, which is what Plex Live TV expects.
-  1. In Plex go to **Settings → Live TV & DVR → Set up Plex DVR**. If RewindTV isn't found automatically, enter `<host>:8420` manually.
-  2. When asked for a guide, choose **XMLTV** and paste the XMLTV URL above.
-
-  Plex DVR requires Plex Pass. The root-level tuner shows the shared channels. Set `REWINDTV_HDHR_PROFILE=<id>` to expose a specific profile's lineup instead; per-profile tuners also live at `http://<host>:8420/hdhr/<profile>/`.
-
-By default IPTV streams copy the source video untouched and only convert audio to AAC, which keeps the CPU near idle. If your library mixes codecs and a picky IPTV player stutters when a new program starts, set `REWINDTV_IPTV_VIDEO=h264` to re-encode everything to identical 720p H.264.
+For Jellyfin: **Dashboard → Live TV → Tuner devices → +** (M3U Tuner), then **TV guide data providers → XMLTV**.
 
 ## Remote / keyboard shortcuts (TV mode)
 
@@ -106,7 +126,8 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 | `REWINDTV_DATA` | `/data` | Where the SQLite database lives |
 | `REWINDTV_PORT` | `8420` | HTTP port |
 | `REWINDTV_PUBLIC_URL` | *(from request)* | Base URL written into M3U/XMLTV links |
-| `REWINDTV_IPTV_VIDEO` | `copy` | `copy` or `h264` for IPTV streams |
+| `REWINDTV_IPTV_VIDEO` | `server` | Live TV/IPTV video. `server`: Plex/Jellyfin transcodes every program to identical 1080p H.264. `copy`: original files untouched, lowest CPU, but codec changes between shows can upset players. `h264`: RewindTV re-encodes with its own ffmpeg. |
+| `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
 | `REWINDTV_SYNC_HOURS` | `6` | Library sync interval |
 | `REWINDTV_HDHR_PROFILE` | `0` | Profile whose lineup the HDHomeRun tuner (for Plex) exposes; `0` = shared channels |
 

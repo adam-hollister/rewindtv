@@ -8,6 +8,10 @@ services:
   rewindtv:
     image: ghcr.io/adam-hollister/rewindtv:latest
     restart: unless-stopped
+    # Optional: host networking lets Plex discover RewindTV automatically
+    # (HDHomeRun discovery uses UDP broadcasts). If you enable it, remove the
+    # "ports" section below. Without it, add the tuner in Plex by address.
+    # network_mode: host
     ports:
       - "8420:8420"
     environment:

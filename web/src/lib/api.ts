@@ -108,6 +108,13 @@ export interface Facets {
 export interface RulePreview { items: number; hours: number; shows: number; movies: number; sample: string[] }
 export interface Suggestion { kind: string; name: string; rule: Rule; ordering: Ordering; items: number; hours: number }
 export interface PreviewProgram { start: number; end: number; title: string; subtitle: string | null; block: string | null; filler: boolean }
+export interface PlexPin { id: number; code: string; link_url: string }
+export interface PlexServer {
+  name: string; owned: boolean; token: string; best: string | null;
+  connections: { uri: string; local: boolean; reachable: boolean }[];
+}
+export interface DiagnoseCheck { name: string; ok: boolean; detail: string; ms: number }
+export interface DiagnoseReport { source: string; kind: string; item: string | null; ok: boolean; checks: DiagnoseCheck[] }
 export interface Status { version: string; timezone: string; sources: number; items: number; channels: number; users: number; sessions: number }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -141,6 +148,10 @@ export const api = {
   updateSource: (id: number, s: Partial<{ name: string; url: string; token: string; enabled: boolean }>) => req<null>('PATCH', `/api/sources/${id}`, s),
   deleteSource: (id: number) => req<null>('DELETE', `/api/sources/${id}`),
   setLibrary: (id: number, enabled: boolean) => req<null>('PATCH', `/api/libraries/${id}`, { enabled }),
+  diagnose: (id: number) => req<DiagnoseReport>('POST', `/api/sources/${id}/diagnose`),
+  plexPin: () => req<PlexPin>('POST', '/api/plex/pin'),
+  plexPinStatus: (id: number) => req<{ token: string | null }>('GET', `/api/plex/pin/${id}`),
+  plexServers: (token: string) => req<PlexServer[]>('GET', `/api/plex/servers?token=${encodeURIComponent(token)}`),
   syncStatus: () => req<SyncStatus>('GET', '/api/sync'),
   syncNow: () => req<SyncStatus>('POST', '/api/sync'),
 
