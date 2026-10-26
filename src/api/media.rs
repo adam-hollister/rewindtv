@@ -95,7 +95,13 @@ pub async fn tune(State(st): State<AppState>, Path(id): Path<i64>, body: Option<
     let src = st.source(program.source_id.unwrap_or_default()).await?;
     let sid = uuid::Uuid::new_v4().simple().to_string();
     let offset_ms = now - program.start_ms;
-    let master = src.hls_url(program.item_key.as_deref().unwrap_or_default(), program.part_key.as_deref(), offset_ms, &sid);
+    let master = src.hls_url(
+        program.item_key.as_deref().unwrap_or_default(),
+        program.part_key.as_deref(),
+        program.video_codec.as_deref(),
+        offset_ms,
+        &sid,
+    );
     src.prepare(&master).await;
     st.sessions.insert(sid.clone(), src, master).await;
     out.kind = "stream";

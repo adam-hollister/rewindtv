@@ -150,19 +150,69 @@ pub fn extinf_total(text: &str) -> f64 {
 /// Length in seconds of a session's playlist. Used to tell whether the server
 /// started at the requested offset (Plex) or returned the whole program
 /// (Jellyfin), in which case the reader has to seek.
-pub async fn playlist_seconds(st: &AppState, sid: &str) -> Option<f64> {
-    let s = st.sessions.touch(sid).await?;
+pub async fn playlist_seconds(st: &AppState, sid: &str) -> Result<f64, String> {
+    let s = st.sessions.touch(sid).await.ok_or("session expired")?;
     let headers = s.source.session_headers(sid);
-    let get = |u: Url| {
-        let req = st.http.get(u).headers(headers.clone());
-        async move { req.send().await.ok()?.error_for_status().ok()?.text().await.ok() }
+    let get = |u: Url, what: &'static str| {
+        let req = st.http.get(u).headers(headers.clone()).timeout(std::time::Duration::from_secs(45));
+        async move {
+            let res = req.send().await.map_err(|e| format!("{what}: {e}"))?;
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            if status.is_success() {
+                Ok(text)
+            } else {
+                Err(format!("{what}: server answered HTTP {status}{}", upstream_hint(status.as_u16())))
+            }
+        }
     };
-    let master = get(s.master.clone()).await?;
+    let master = get(s.master.clone(), "master playlist").await?;
     let media = match first_variant(&master) {
-        Some(v) => get(s.master.join(v).ok()?).await?,
+        Some(v) => get(s.master.join(v).map_err(|e| e.to_string())?, "transcode playlist").await?,
         None => master,
     };
-    Some(extinf_total(&media))
+    Ok(extinf_total(&media))
+}
+
+/// What an upstream HTTP error usually means, in plain words.
+fn upstream_hint(status: u16) -> &'static str {
+    match status {
+        401 | 403 => " — the token/API key was rejected",
+        404 => " — the item is gone; run Sync now",
+        500 => " — the server could not start a transcode (check its transcoder settings and log)",
+        503 => " — the server is busy or out of transcode slots",
+        _ => "",
+    }
+}
+
+/// Downloads the first media segment of a session (for diagnostics).
+pub async fn first_segment(st: &AppState, sid: &str) -> Result<bytes::Bytes, String> {
+    let s = st.sessions.touch(sid).await.ok_or("session expired")?;
+    let headers = s.source.session_headers(sid);
+    let fetch = |u: Url| {
+        let req = st.http.get(u).headers(headers.clone()).timeout(std::time::Duration::from_secs(45));
+        async move {
+            let res = req.send().await.map_err(|e| e.to_string())?;
+            let status = res.status();
+            let body = res.bytes().await.map_err(|e| e.to_string())?;
+            if status.is_success() {
+                Ok(body)
+            } else {
+                Err(format!("HTTP {status}{}", upstream_hint(status.as_u16())))
+            }
+        }
+    };
+    let master = fetch(s.master.clone()).await?;
+    let master = String::from_utf8_lossy(&master).into_owned();
+    let (media_url, media) = match first_variant(&master) {
+        Some(v) => {
+            let u = s.master.join(v).map_err(|e| e.to_string())?;
+            (u.clone(), String::from_utf8_lossy(&fetch(u).await?).into_owned())
+        }
+        None => (s.master.clone(), master),
+    };
+    let seg = media.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#')).ok_or("playlist has no segments")?;
+    fetch(media_url.join(seg).map_err(|e| e.to_string())?).await
 }
 
 #[cfg(test)]

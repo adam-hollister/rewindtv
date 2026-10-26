@@ -22,6 +22,7 @@ pub struct Library {
 pub struct RemoteItem {
     pub item_key: String,
     pub part_key: Option<String>,
+    pub video_codec: Option<String>,
     pub kind: &'static str,
     pub title: String,
     pub show_key: Option<String>,
@@ -82,9 +83,9 @@ impl Source {
     /// HLS master playlist for browser playback, transcoded/remuxed by the
     /// media server to h264/aac. `offset_ms` is a hint; some servers return a
     /// full-length playlist and the player seeks instead.
-    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, offset_ms: i64, session: &str) -> Url {
+    pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, video_codec: Option<&str>, offset_ms: i64, session: &str) -> Url {
         match self {
-            Source::Plex(p) => p.hls_url(item_key, offset_ms, session),
+            Source::Plex(p) => p.hls_url(item_key, offset_ms, session, video_codec == Some("h264")),
             Source::Jellyfin(j) => j.hls_url(item_key, part_key, session),
         }
     }

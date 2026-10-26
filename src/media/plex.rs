@@ -114,8 +114,9 @@ impl Plex {
     }
 
     /// Browser playback: remux when the source is already H.264, transcode otherwise.
-    pub fn hls_url(&self, item_key: &str, offset_ms: i64, session: &str) -> Url {
-        self.transcode_url(item_key, offset_ms, session, false)
+    /// `remux_ok` lets Plex copy the video when it's already H.264.
+    pub fn hls_url(&self, item_key: &str, offset_ms: i64, session: &str, remux_ok: bool) -> Url {
+        self.transcode_url(item_key, offset_ms, session, !remux_ok)
     }
 
     /// Live TV tuner feed: always a fresh 1080p H.264 + stereo AAC transcode,
@@ -127,14 +128,6 @@ impl Plex {
 
     fn transcode_url(&self, item_key: &str, offset_ms: i64, session: &str, uniform: bool) -> Url {
         let mut u = self.url("/video/:/transcode/universal/start.m3u8");
-        let mut profile = String::from(
-            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac)",
-        );
-        if uniform {
-            profile.push_str(
-                "+add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)",
-            );
-        }
         u.query_pairs_mut()
             .append_pair("path", &format!("/library/metadata/{item_key}"))
             .append_pair("mediaIndex", "0")
@@ -155,8 +148,14 @@ impl Plex {
             .append_pair("X-Plex-Client-Identifier", &Self::client_id(session))
             .append_pair("X-Plex-Product", "RewindTV")
             .append_pair("X-Plex-Device-Name", "RewindTV")
-            .append_pair("X-Plex-Platform", "Chrome")
-            .append_pair("X-Plex-Client-Profile-Extra", &profile);
+            // The Chrome profile already transcodes to HLS/MPEG-TS with H.264 + AAC.
+            .append_pair("X-Plex-Platform", "Chrome");
+        if uniform {
+            u.query_pairs_mut().append_pair(
+                "X-Plex-Client-Profile-Extra",
+                "add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)",
+            );
+        }
         u
     }
 
@@ -211,6 +210,10 @@ impl Plex {
     }
 }
 
+fn video_codec(v: &Value) -> Option<String> {
+    s(arr(v, "Media").first()?, "videoCodec")
+}
+
 fn part_key(v: &Value) -> Option<String> {
     let media = arr(v, "Media").first()?;
     s(arr(media, "Part").first()?, "key")
@@ -220,6 +223,7 @@ fn movie(v: &Value) -> Option<RemoteItem> {
     Some(RemoteItem {
         item_key: s(v, "ratingKey")?,
         part_key: part_key(v),
+        video_codec: video_codec(v),
         kind: "movie",
         title: s(v, "title")?,
         year: i(v, "year"),
@@ -243,6 +247,7 @@ fn episode(v: &Value, show: Option<&Value>) -> Option<RemoteItem> {
     Some(RemoteItem {
         item_key: s(v, "ratingKey")?,
         part_key: part_key(v),
+        video_codec: video_codec(v),
         kind: "episode",
         title: s(v, "title")?,
         show_key: s(v, "grandparentRatingKey"),
@@ -276,7 +281,7 @@ mod tests {
             "ratingKey": "11", "title": "The Pilot", "grandparentRatingKey": "10",
             "grandparentTitle": "Friends", "parentIndex": 1, "index": 1, "duration": 1320000,
             "grandparentThumb": "/library/metadata/10/thumb/1",
-            "Media": [{"Part": [{"key": "/library/parts/5/1/file.mkv"}]}]
+            "Media": [{"videoCodec": "hevc", "Part": [{"key": "/library/parts/5/1/file.mkv"}]}]
         });
         let item = episode(&ep, Some(&show)).unwrap();
         assert_eq!(item.show_title.as_deref(), Some("Friends"));
@@ -284,6 +289,7 @@ mod tests {
         assert_eq!(item.collections, vec!["90s Sitcoms"]);
         assert_eq!(item.year, Some(1994));
         assert_eq!(item.part_key.as_deref(), Some("/library/parts/5/1/file.mkv"));
+        assert_eq!(item.video_codec.as_deref(), Some("hevc"));
         assert_eq!((item.season, item.episode), (Some(1), Some(1)));
     }
 
@@ -298,8 +304,10 @@ mod tests {
         assert_eq!(q["X-Plex-Client-Identifier"], "rewindtv-abc");
         assert!(q["X-Plex-Client-Profile-Extra"].contains("audio.channels&value=2"));
         assert!(!q.contains_key("X-Plex-Token"), "token must not be in URLs");
-        let browser: HashMap<String, String> = p.hls_url("42", 0, "abc").query_pairs().into_owned().collect();
+        let browser: HashMap<String, String> = p.hls_url("42", 0, "abc", true).query_pairs().into_owned().collect();
         assert_eq!(browser["directStream"], "1");
+        let hevc: HashMap<String, String> = p.hls_url("42", 0, "abc", false).query_pairs().into_owned().collect();
+        assert_eq!(hevc["directStream"], "0", "non-H.264 sources are transcoded for browsers");
     }
 
     #[test]

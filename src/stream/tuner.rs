@@ -253,7 +253,7 @@ async fn open_server_session(st: &AppState, src: Source, prog: &ProgramInfo, off
     let full_s = prog.duration_ms.unwrap_or(prog.end_ms - prog.start_ms) as f64 / 1000.0;
     // Did the server start at the offset (Plex), or hand back the whole program (Jellyfin)?
     let seek = match crate::stream::hls::playlist_seconds(st, &sid).await {
-        Some(total) if offset_s > 0.0 && (total - full_s).abs() < (total - (full_s - offset_s)).abs() => offset_s,
+        Ok(total) if offset_s > 0.0 && (total - full_s).abs() < (total - (full_s - offset_s)).abs() => offset_s,
         _ => 0.0,
     };
     let url = format!("http://127.0.0.1:{}/stream/{sid}/master.m3u8", st.cfg.port);

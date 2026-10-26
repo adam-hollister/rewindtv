@@ -27,15 +27,16 @@ pub async fn refresh_libraries(db: &SqlitePool, source_id: i64, src: &Source) ->
 async fn upsert(tx: &mut sqlx::SqliteConnection, source_id: i64, library_id: i64, it: &RemoteItem, run: i64) -> anyhow::Result<()> {
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO media_items (source_id, library_id, item_key, part_key, kind, title, show_key, show_title,
-            season, episode, year, duration_ms, summary, content_rating, studio, thumb, art, missing, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+            season, episode, year, duration_ms, summary, content_rating, studio, thumb, art, video_codec, missing, synced_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
          ON CONFLICT(source_id, item_key) DO UPDATE SET
             library_id = excluded.library_id, part_key = excluded.part_key, kind = excluded.kind,
             title = excluded.title, show_key = excluded.show_key, show_title = excluded.show_title,
             season = excluded.season, episode = excluded.episode, year = excluded.year,
             duration_ms = excluded.duration_ms, summary = excluded.summary,
             content_rating = excluded.content_rating, studio = excluded.studio,
-            thumb = excluded.thumb, art = excluded.art, missing = 0, synced_at = excluded.synced_at
+            thumb = excluded.thumb, art = excluded.art, video_codec = excluded.video_codec,
+            missing = 0, synced_at = excluded.synced_at
          RETURNING id",
     )
     .bind(source_id)
@@ -55,6 +56,7 @@ async fn upsert(tx: &mut sqlx::SqliteConnection, source_id: i64, library_id: i64
     .bind(&it.studio)
     .bind(&it.thumb)
     .bind(&it.art)
+    .bind(&it.video_codec)
     .bind(run)
     .fetch_one(&mut *tx)
     .await?;

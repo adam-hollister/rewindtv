@@ -1,6 +1,8 @@
 mod channels;
+mod diagnose;
 mod library;
 mod media;
+mod plex;
 mod sources;
 mod users;
 
@@ -19,6 +21,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/sources", get(sources::list).post(sources::create))
         .route("/api/sources/test", post(sources::test))
         .route("/api/sources/{id}", patch(sources::update).delete(sources::remove))
+        .route("/api/sources/{id}/diagnose", post(diagnose::diagnose))
+        .route("/api/plex/pin", post(plex::create_pin))
+        .route("/api/plex/pin/{id}", get(plex::check_pin))
+        .route("/api/plex/servers", get(plex::servers))
         .route("/api/libraries/{id}", patch(sources::set_library))
         .route("/api/sync", get(sources::sync_status).post(sources::sync_now))
         .route("/api/library/facets", get(library::facets))

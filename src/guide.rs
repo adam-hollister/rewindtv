@@ -17,6 +17,8 @@ pub struct ProgramInfo {
     pub item_key: Option<String>,
     #[serde(skip)]
     pub part_key: Option<String>,
+    #[serde(skip)]
+    pub video_codec: Option<String>,
     pub kind: Option<String>,
     pub title: Option<String>,
     pub show_title: Option<String>,
@@ -58,7 +60,7 @@ impl ProgramInfo {
 }
 
 const SELECT: &str = "SELECT p.id, p.channel_id, p.start_ms, p.end_ms, p.slot_id, cs.title AS slot_title,
-        p.item_id, m.source_id, m.item_key, m.part_key, m.kind, m.title, m.show_title, m.season, m.episode,
+        p.item_id, m.source_id, m.item_key, m.part_key, m.video_codec, m.kind, m.title, m.show_title, m.season, m.episode,
         m.year, m.duration_ms, m.summary, m.content_rating, m.thumb, m.art, m.missing
     FROM programs p
     LEFT JOIN media_items m ON m.id = p.item_id

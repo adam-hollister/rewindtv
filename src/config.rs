@@ -16,6 +16,7 @@ pub struct Config {
     /// "h264" re-encodes original files inside RewindTV.
     pub iptv_video: String,
     pub ffmpeg: String,
+    pub ffprobe: String,
     pub sync_hours: u64,
     /// Profile whose lineup the root-level HDHomeRun tuner exposes (0 = shared only).
     pub hdhr_profile: i64,
@@ -33,13 +34,19 @@ impl Config {
         let tz = tz_name
             .parse::<Tz>()
             .map_err(|e| anyhow::anyhow!("invalid TZ {tz_name:?}: {e}"))?;
+        let ffmpeg = env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into());
         Ok(Self {
             data_dir: env("REWINDTV_DATA").unwrap_or_else(|| "/data".into()).into(),
             port: env("REWINDTV_PORT").and_then(|p| p.parse().ok()).unwrap_or(8420),
             tz,
             public_url: env("REWINDTV_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),
             iptv_video: env("REWINDTV_IPTV_VIDEO").unwrap_or_else(|| "server".into()),
-            ffmpeg: env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
+            ffmpeg: ffmpeg.clone(),
+            // ffprobe ships next to ffmpeg (also in jellyfin-ffmpeg).
+            ffprobe: env("REWINDTV_FFPROBE").unwrap_or_else(|| match ffmpeg.strip_suffix("ffmpeg") {
+                Some(dir) => format!("{dir}ffprobe"),
+                None => "ffprobe".into(),
+            }),
             sync_hours: env("REWINDTV_SYNC_HOURS").and_then(|h| h.parse().ok()).unwrap_or(6),
             hdhr_profile: env("REWINDTV_HDHR_PROFILE").and_then(|h| h.parse().ok()).unwrap_or(0),
             tuners: env("REWINDTV_TUNERS").and_then(|t| t.parse().ok()).filter(|t| *t > 0).unwrap_or(6),
