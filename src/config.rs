@@ -19,6 +19,8 @@ pub struct Config {
     pub sync_hours: u64,
     /// Profile whose lineup the root-level HDHomeRun tuner exposes (0 = shared only).
     pub hdhr_profile: i64,
+    /// Tuner count advertised to Plex (how many channels can be watched at once).
+    pub tuners: u8,
 }
 
 fn env(key: &str) -> Option<String> {
@@ -40,6 +42,7 @@ impl Config {
             ffmpeg: env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
             sync_hours: env("REWINDTV_SYNC_HOURS").and_then(|h| h.parse().ok()).unwrap_or(6),
             hdhr_profile: env("REWINDTV_HDHR_PROFILE").and_then(|h| h.parse().ok()).unwrap_or(0),
+            tuners: env("REWINDTV_TUNERS").and_then(|t| t.parse().ok()).filter(|t| *t > 0).unwrap_or(6),
         })
     }
 }

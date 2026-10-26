@@ -66,7 +66,8 @@ pub async fn xmltv(
     let base = base_url(&st, &headers);
     let channels = guide::lineup(&st.db, (user > 0).then_some(user), false).await?;
     let now = now_ms();
-    let hours = q.hours.unwrap_or(72).clamp(1, 168);
+    // A week ahead: Plex only refreshes XMLTV guides about once a day.
+    let hours = q.hours.unwrap_or(168).clamp(1, 168);
     let ids: Vec<i64> = channels.iter().map(|c| c.id).collect();
     let programs = guide::range(&st.db, &ids, now - 3_600_000, now + hours * 3_600_000).await?;
     let genres = item_genres(&st, &programs).await?;
@@ -75,7 +76,7 @@ pub async fn xmltv(
     for c in &channels {
         let _ = writeln!(
             out,
-            "  <channel id=\"rewindtv.{id}\">\n    <display-name>{name}</display-name>\n    <display-name>{num}</display-name>\n    <icon src=\"{base}/api/channels/{id}/logo.svg\"/>\n  </channel>",
+            "  <channel id=\"rewindtv.{id}\">\n    <display-name>{name}</display-name>\n    <display-name>{num}</display-name>\n    <display-name>{num} {name}</display-name>\n    <lcn>{num}</lcn>\n    <icon src=\"{base}/api/channels/{id}/logo.svg\"/>\n  </channel>",
             id = c.id,
             num = c.number,
             name = xml_escape(&c.name),
@@ -99,9 +100,8 @@ pub async fn xmltv(
             for g in genres.get(&p.item_id.unwrap_or_default()).into_iter().flatten() {
                 let _ = writeln!(out, "    <category>{}</category>", xml_escape(g));
             }
-            if p.kind.as_deref() == Some("movie") {
-                let _ = writeln!(out, "    <category>Movie</category>");
-            }
+            // Plex sorts the guide into Movies / Shows using these.
+            let _ = writeln!(out, "    <category>{}</category>", if p.kind.as_deref() == Some("movie") { "Movie" } else { "Series" });
             if let (Some(src), Some(thumb)) = (p.source_id, &p.thumb) {
                 let enc: String = url::form_urlencoded::byte_serialize(thumb.as_bytes()).collect();
                 let _ = writeln!(out, "    <icon src=\"{base}/api/img/{src}?w=400&amp;p={enc}\"/>");
@@ -113,6 +113,8 @@ pub async fn xmltv(
             if let Some(r) = &p.content_rating {
                 let _ = writeln!(out, "    <rating><value>{}</value></rating>", xml_escape(r));
             }
+            // It's all reruns: keep Plex from flagging everything as NEW.
+            out.push_str("    <previously-shown/>\n");
         }
         out.push_str("  </programme>\n");
     }
@@ -158,9 +160,9 @@ async fn discover_json(st: &AppState, headers: &HeaderMap, user: Option<i64>) ->
         "ModelNumber": "HDTC-2US",
         "FirmwareName": "hdhomeruntc_atsc",
         "FirmwareVersion": "20200101",
-        "DeviceID": format!("52574{uid:03}"),
+        "DeviceID": format!("{:08X}", super::hdhr::device_id(uid)),
         "DeviceAuth": "rewindtv",
-        "TunerCount": 6,
+        "TunerCount": st.cfg.tuners,
         "BaseURL": base,
         "LineupURL": format!("{base}/lineup.json"),
     }))
@@ -173,7 +175,7 @@ async fn lineup_json(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> A
     let channels = guide::lineup(&st.db, (uid > 0).then_some(uid), false).await?;
     let list: Vec<_> = channels
         .iter()
-        .map(|c| serde_json::json!({ "GuideNumber": c.number.to_string(), "GuideName": c.name, "URL": format!("{base}/iptv/stream/{}.ts", c.id) }))
+        .map(|c| serde_json::json!({ "GuideNumber": c.number.to_string(), "GuideName": c.name, "HD": 1, "URL": format!("{base}/iptv/stream/{}.ts", c.id) }))
         .collect();
     Ok(axum::Json(list).into_response())
 }
@@ -185,8 +187,9 @@ fn lineup_status() -> Response {
 fn device_xml(st: &AppState, headers: &HeaderMap, user: Option<i64>) -> Response {
     let base = hdhr_base(st, headers, user);
     let uid = hdhr_user(st, user);
+    let id = super::hdhr::device_id(uid);
     let xml = format!(
-        r#"<root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><URLBase>{base}</URLBase><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><friendlyName>RewindTV</friendlyName><manufacturer>Silicondust</manufacturer><modelName>HDTC-2US</modelName><modelNumber>HDTC-2US</modelNumber><serialNumber/><UDN>uuid:52574{uid:03}-rewindtv</UDN></device></root>"#
+        r#"<root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><URLBase>{base}</URLBase><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><friendlyName>RewindTV</friendlyName><manufacturer>Silicondust</manufacturer><modelName>HDTC-2US</modelName><modelNumber>HDTC-2US</modelNumber><serialNumber>{id:08X}</serialNumber><UDN>uuid:{id:08X}-rewindtv</UDN></device></root>"#
     );
     ([(header::CONTENT_TYPE, "application/xml")], xml).into_response()
 }

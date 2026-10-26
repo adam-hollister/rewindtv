@@ -92,6 +92,8 @@ fn spawn_background(state: AppState) {
         }
     });
 
+    tokio::spawn(stream::hdhr::serve(state.clone()));
+
     // Stop transcodes nobody is watching any more.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(15));
