@@ -39,17 +39,27 @@ fn env(key: &str) -> Option<String> {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let tz_name = env("TZ").unwrap_or_else(|| "UTC".into());
+        let tz_name = env("TZ").unwrap_or_else(|| "America/Chicago".into());
         let tz = tz_name
             .parse::<Tz>()
             .map_err(|e| anyhow::anyhow!("invalid TZ {tz_name:?}: {e}"))?;
         let ffmpeg = env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into());
-        let data_dir: PathBuf = env("REWINDTV_DATA").unwrap_or_else(|| "/data".into()).into();
+        // One folder for everything (REWINDTV_HOME, e.g. a single TrueNAS
+        // dataset): RewindTV keeps its database in data/ and marker files in
+        // markers/ inside it. The specific variables still override.
+        let home: Option<PathBuf> = env("REWINDTV_HOME").map(PathBuf::from);
+        let data_dir: PathBuf = env("REWINDTV_DATA")
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|h| h.join("data")))
+            .unwrap_or_else(|| "/data".into());
         Ok(Self {
             path_maps: env("REWINDTV_PATH_MAP")
                 .map(|v| v.split(';').filter_map(|p| p.split_once('=')).map(|(a, b)| (a.trim().to_string(), b.trim().to_string())).collect())
                 .unwrap_or_default(),
-            markers_dir: env("REWINDTV_MARKERS_DIR").map(PathBuf::from).unwrap_or_else(|| data_dir.join("markers")),
+            markers_dir: env("REWINDTV_MARKERS_DIR")
+                .map(PathBuf::from)
+                .or_else(|| home.as_ref().map(|h| h.join("markers")))
+                .unwrap_or_else(|| data_dir.join("markers")),
             data_dir,
             port: env("REWINDTV_PORT").and_then(|p| p.parse().ok()).unwrap_or(8420),
             tz,

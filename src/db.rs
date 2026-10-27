@@ -4,12 +4,18 @@ use std::str::FromStr;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::SqlitePool;
 
-pub async fn open(dir: &Path) -> anyhow::Result<SqlitePool> {
+/// Create a folder RewindTV writes to and make sure it really is writable,
+/// failing early with a clear message rather than a cryptic error later.
+pub fn ensure_writable(dir: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dir).map_err(|e| writable_hint(dir, e))?;
-    // Fail early with a clear message rather than a cryptic SQLite error.
     let probe = dir.join(".write-test");
     std::fs::write(&probe, b"ok").map_err(|e| writable_hint(dir, e))?;
     let _ = std::fs::remove_file(probe);
+    Ok(())
+}
+
+pub async fn open(dir: &Path) -> anyhow::Result<SqlitePool> {
+    ensure_writable(dir)?;
     let path = dir.join("rewindtv.db");
     let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
         .create_if_missing(true)
@@ -26,7 +32,7 @@ pub async fn open(dir: &Path) -> anyhow::Result<SqlitePool> {
 fn writable_hint(dir: &Path, e: std::io::Error) -> anyhow::Error {
     anyhow::anyhow!(
         "can't write to {} ({e}). The container runs as uid/gid 568 (TrueNAS's \"apps\" user): \
-         create the dataset with the Apps permission preset, or chown it to 568:568.",
+         give the dataset the Apps permission preset (ACL), or chown it to 568:568.",
         dir.display()
     )
 }

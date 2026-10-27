@@ -37,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
         return health(cfg.port).await;
     }
     let db = db::open(&cfg.data_dir).await?;
+    db::ensure_writable(&cfg.markers_dir)?;
+    tracing::info!("database in {}, intro/credits markers in {}", cfg.data_dir.display(), cfg.markers_dir.display());
     let http = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .pool_idle_timeout(Duration::from_secs(60))

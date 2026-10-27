@@ -14,10 +14,9 @@ services:
       # Live TV / IPTV video: "server" (default) has Plex/Jellyfin transcode
       # every program to identical 1080p H.264; "copy" passes files through.
       # REWINDTV_IPTV_VIDEO: server
-      # REWINDTV_MARKERS_DIR: /markers
       # REWINDTV_PATH_MAP: /data/media=/media
-    # Runs as uid/gid 568; make sure ./data is writable by it (chown 568:568 data).
+    # Runs as uid/gid 568; make ./rewindtv writable by it (chown 568:568 rewindtv).
+    # RewindTV creates data/ and markers/ inside it.
     volumes:
-      - ./data:/data
-      # - ./markers:/markers
+      - ./rewindtv:/rewindtv
       # - /path/to/media:/media:ro

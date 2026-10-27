@@ -27,13 +27,14 @@ RUN apt-get update \
 COPY --from=server /src/target/release/rewindtv /usr/local/bin/rewindtv
 # Run unprivileged as uid/gid 568, TrueNAS's standard "apps" user.
 RUN groupadd --system --gid 568 rewindtv \
- && useradd --system --uid 568 --gid 568 --home-dir /data --shell /usr/sbin/nologin rewindtv \
- && mkdir -p /data /markers && chown 568:568 /data /markers
+ && useradd --system --uid 568 --gid 568 --home-dir /rewindtv --shell /usr/sbin/nologin rewindtv \
+ && mkdir -p /rewindtv && chown 568:568 /rewindtv
 USER 568:568
-ENV REWINDTV_DATA=/data \
+# Everything lives in one folder; RewindTV creates data/ and markers/ in it.
+ENV REWINDTV_HOME=/rewindtv \
     REWINDTV_PORT=8420 \
-    TZ=UTC
-VOLUME /data
+    TZ=America/Chicago
+VOLUME /rewindtv
 EXPOSE 8420
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["rewindtv", "health"]
 ENTRYPOINT ["/usr/bin/tini", "--"]

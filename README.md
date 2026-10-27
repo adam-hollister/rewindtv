@@ -45,9 +45,9 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 
 These steps are for TrueNAS SCALE 24.10 "Electric Eel" or newer.
 
-1. **Create two datasets** with the **Apps** permission preset (RewindTV runs as the `apps` user, uid 568): one for the app's data, e.g. `tank/apps/rewindtv`, and one for intro/credits markers, e.g. `tank/apps/rewindtv-markers`.
+1. **Create one dataset** with the **Apps** permission preset, e.g. `important/synced/rewindtv`. RewindTV runs as the `apps` user (uid 568) and creates what it needs inside it: `data/` (the database) and `markers/` (intro/credits markers, one JSON file per show).
 2. Go to **Apps → Discover Apps → ⋮ (top right) → Install via YAML**.
-3. Paste [`truenas/rewindtv.yaml`](truenas/rewindtv.yaml). Change the host path to your dataset and `TZ` to your time zone.
+3. Paste [`truenas/rewindtv.yaml`](truenas/rewindtv.yaml). It's set up for `/mnt/important/synced/rewindtv` and Central time (`America/Chicago`); change those two lines if yours differ.
 4. Open `http://<truenas-ip>:8420`, create a profile, then go to **Settings → Add server**.
 
 > **Private repository note:** GitHub publishes the image to `ghcr.io/adam-hollister/rewindtv`. If this repository is private, the package is private too, and TrueNAS can't pull it without credentials. You have two options:
@@ -119,7 +119,7 @@ Turn on **Skip intros** and/or **Skip credits** per channel in the channel edito
 **Markers are saved per show, not per server.**
 - They're tied to the episode itself: show + season + episode, or title + year for movies, plus TVDB/TMDB/IMDb IDs. They are not tied to a server's internal ID, so markers set once apply on Plex, Jellyfin, a rebuilt server or a second RewindTV install.
 - If a file's length differs slightly between servers, credits stay matched to the end.
-- They're stored as readable JSON in their own folder (`REWINDTV_MARKERS_DIR`, default `/data/markers`), one file per show, never next to your media. Your source choices are saved there too.
+- They're stored as readable JSON in their own folder (`markers/` inside RewindTV's folder; `REWINDTV_MARKERS_DIR` overrides), one file per show, never next to your media. Your source choices are saved there too.
 - RewindTV writes the files as markers change and reads the whole folder at startup and on every sync. Point a fresh install at the same folder and everything comes back.
 
 ## Other IPTV apps (Jellyfin Live TV, TiviMate, VLC)
@@ -149,12 +149,13 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TZ` | `UTC` | Time zone for time-of-day blocks, alignment and the guide |
-| `REWINDTV_DATA` | `/data` | Where the SQLite database lives |
+| `TZ` | `America/Chicago` | Time zone for time-of-day blocks, alignment and the guide |
+| `REWINDTV_HOME` | `/rewindtv` | RewindTV's one folder; it creates `data/` and `markers/` inside |
+| `REWINDTV_DATA` | `$REWINDTV_HOME/data` | Where the SQLite database lives (override) |
 | `REWINDTV_PORT` | `8420` | HTTP port |
 | `REWINDTV_PUBLIC_URL` | *(from request)* | Base URL written into M3U/XMLTV links |
 | `REWINDTV_IPTV_VIDEO` | `server` | Live TV/IPTV video. `server`: Plex/Jellyfin transcodes every program to identical 1080p H.264. `copy`: original files untouched, lowest CPU, but codec changes between shows can upset players. `h264`: RewindTV re-encodes with its own ffmpeg. |
-| `REWINDTV_MARKERS_DIR` | `/data/markers` | Intro/credits marker files (one JSON per show); give it its own dataset to keep it across reinstalls |
+| `REWINDTV_MARKERS_DIR` | `$REWINDTV_HOME/markers` | Intro/credits marker files, one JSON per show (override) |
 | `REWINDTV_PATH_MAP` | *(none)* | `server_path=container_path;…` so auto-detect reads a read-only media mount directly |
 | `REWINDTV_ALLOWED_HOSTS` | *(none)* | Extra host names RewindTV answers to, comma separated (IPs, `localhost`, single-word names and `.local`/`.lan`/`.home.arpa` names always work) |
 | `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
@@ -187,8 +188,8 @@ Don't expose port 8420 to the internet. Use a VPN (WireGuard, Tailscale) to watc
 ## Development
 
 ```sh
-# backend (serves the API on :8420; uses ./data)
-REWINDTV_DATA=./data TZ=America/Chicago cargo run
+# backend (serves the API on :8420; keeps data/ and markers/ in ./rewindtv)
+REWINDTV_HOME=./rewindtv TZ=America/Chicago cargo run
 
 # frontend with hot reload on :5173 (proxies /api to :8420)
 cd web && npm install && npm run dev
