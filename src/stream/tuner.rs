@@ -551,6 +551,48 @@ mod tests {
         assert_eq!(tb[1].1, Some(993_000 + JOIN_GAP));
     }
 
+    fn episode(cuts: &str) -> ProgramInfo {
+        // A 24-minute episode with a cold open, intro, show, credits and a stinger.
+        ProgramInfo {
+            id: 1,
+            start_ms: 1_000_000,
+            end_ms: 1_000_000 + 1_440_000 - 90_000 - 90_000,
+            item_id: Some(1),
+            duration_ms: Some(1_440_000),
+            cuts: Some(cuts.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn units_follow_the_kept_ranges() {
+        let p = episode("[[60000,150000],[1290000,1380000]]");
+        let u = unit_at(p.clone(), 0);
+        assert_eq!((u.media_start, u.media_end, u.air_end), (0, 60_000, 1_060_000), "cold open first");
+        let u2 = next_in_program(&u).unwrap();
+        assert_eq!((u2.media_start, u2.media_end), (150_000, 1_290_000), "intro skipped");
+        assert_eq!(u2.air_end, 1_060_000 + 1_140_000);
+        let u3 = next_in_program(&u2).unwrap();
+        assert_eq!((u3.media_start, u3.media_end), (1_380_000, 1_440_000), "credits skipped, stinger kept");
+        assert_eq!(u3.air_end, p.end_ms, "the last unit ends with the program");
+        assert!(next_in_program(&u3).is_none());
+
+        // Tuning in 70 s into the program lands 10 s after the intro.
+        let mid = unit_at(p.clone(), 70_000);
+        assert_eq!((mid.media_start, mid.range), (160_000, 1));
+        assert_eq!(mid.air_end, u2.air_end);
+    }
+
+    #[test]
+    fn programs_without_cuts_are_one_unit() {
+        let mut p = episode("[]");
+        p.cuts = None;
+        p.end_ms = p.start_ms + 1_440_000;
+        let u = unit_at(p.clone(), 5_000);
+        assert_eq!((u.media_start, u.media_end, u.air_end), (5_000, 1_440_000, p.end_ms));
+        assert!(next_in_program(&u).is_none());
+    }
+
     #[test]
     fn null_packets_pass_through() {
         let mut s = Stitcher::new(90_000);

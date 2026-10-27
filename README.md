@@ -37,6 +37,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Profiles.** A Netflix-style "Who's watching?" screen. Each profile gets its own favorites, hidden channels and private channels; shared channels show for everyone. There are no passwords, since this is meant for your home network.
 - **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
 - **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
+- **Skip intros and credits per channel.** Uses Plex's markers, markers you set (per season or episode), and RewindTV's own audio-based detection. Markers are saved per show in their own folder and apply on every server.
 - **Sign in with Plex and a built-in check.** Sign in with Plex instead of hunting for a token. A one-click check tests every playback path on your real server.
 - **Light on your NAS.** Browser playback uses your media server's own transcoder, including hardware acceleration if you have it. RewindTV proxies the stream, so server tokens never reach the browser. Abandoned streams are stopped automatically when someone channel-surfs.
 
@@ -95,6 +96,32 @@ How the Plex tuner works:
 - **What Plex sees.** The tuner advertises 6 tuners (`REWINDTV_TUNERS`) and exposes the shared channels (`REWINDTV_HDHR_PROFILE=<id>` picks a profile instead). The XMLTV guide covers 7 days.
 - **Automatic discovery.** Plex finds RewindTV on the network via HDHomeRun discovery (UDP 65001). This only works with host networking; see the TrueNAS YAML. With the default bridge network, use the manual address in step 2.
 
+## Skipping intros and credits
+
+Turn on **Skip intros** and/or **Skip credits** per channel in the channel editor. It's handy for anime and binge channels. Skipping is part of the schedule:
+- The guide shows each episode's real, shorter run time.
+- Plex Live TV gets a clean cut over the theme song.
+- The browser player jumps the gaps.
+- Only the credits themselves are cut, so post-credit scenes still play.
+
+**Where markers come from.** Pick the sources in **Settings → Intros & credits**. When several exist, the highest one on this list wins:
+1. **Your markers.** The marker editor has a page per show (open it from Settings → Intros & credits → Shows), where you can set:
+   - Season rules like "intro 1:32–3:02" or "credits = the last 1:30 of each episode".
+   - Single-episode overrides. **Preview** plays the episode so you can press *Mark start* / *Mark end* at the exact moment.
+2. **Plex / Jellyfin.**
+   - Plex: Plex Pass detects intros and credits. Turn on *Generate intro video markers* and *Generate credits video markers* in Plex's library settings.
+   - Jellyfin: needs a media-segments plugin such as Intro Skipper.
+   - RewindTV picks these up on every sync, and re-checks weekly while Plex finishes analysing.
+3. **Auto-detect.** RewindTV compares the audio of episodes in a season and finds the theme song and credits they share.
+   - It only scans shows on channels that skip something, one file at a time, and caches its work.
+   - It reads files through your media server, or from your media folder if you mount it read-only and set `REWINDTV_PATH_MAP`.
+
+**Markers are saved per show, not per server.**
+- They're tied to the episode itself: show + season + episode, or title + year for movies, plus TVDB/TMDB/IMDb IDs. They are not tied to a server's internal ID, so markers set once apply on Plex, Jellyfin, a rebuilt server or a second RewindTV install.
+- If a file's length differs slightly between servers, credits stay matched to the end.
+- They're stored as readable JSON in their own folder (`REWINDTV_MARKERS_DIR`, default `/data/markers`), one file per show, never next to your media. Your source choices are saved there too.
+- RewindTV writes the files as markers change and reads the whole folder at startup and on every sync. Point a fresh install at the same folder and everything comes back.
+
 ## Other IPTV apps (Jellyfin Live TV, TiviMate, VLC)
 
 **Settings → Other IPTV apps** lists two URLs per profile (profile `0` is the shared channels only):
@@ -127,6 +154,8 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 | `REWINDTV_PORT` | `8420` | HTTP port |
 | `REWINDTV_PUBLIC_URL` | *(from request)* | Base URL written into M3U/XMLTV links |
 | `REWINDTV_IPTV_VIDEO` | `server` | Live TV/IPTV video. `server`: Plex/Jellyfin transcodes every program to identical 1080p H.264. `copy`: original files untouched, lowest CPU, but codec changes between shows can upset players. `h264`: RewindTV re-encodes with its own ffmpeg. |
+| `REWINDTV_MARKERS_DIR` | `/data/markers` | Intro/credits marker files (one JSON per show); give it its own dataset to keep it across reinstalls |
+| `REWINDTV_PATH_MAP` | *(none)* | `server_path=container_path;…` so auto-detect reads a read-only media mount directly |
 | `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
 | `REWINDTV_SYNC_HOURS` | `6` | Library sync interval |
 | `REWINDTV_HDHR_PROFILE` | `0` | Profile whose lineup the HDHomeRun tuner (for Plex) exposes; `0` = shared channels |

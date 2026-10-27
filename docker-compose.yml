@@ -14,5 +14,9 @@ services:
       # Live TV / IPTV video: "server" (default) has Plex/Jellyfin transcode
       # every program to identical 1080p H.264; "copy" passes files through.
       # REWINDTV_IPTV_VIDEO: server
+      # REWINDTV_MARKERS_DIR: /markers
+      # REWINDTV_PATH_MAP: /data/media=/media
     volumes:
       - ./data:/data
+      # - ./markers:/markers
+      # - /path/to/media:/media:ro

@@ -3,7 +3,7 @@
 use serde::Serialize;
 use sqlx::SqlitePool;
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Default, Serialize, sqlx::FromRow)]
 pub struct ProgramInfo {
     pub id: i64,
     pub channel_id: i64,

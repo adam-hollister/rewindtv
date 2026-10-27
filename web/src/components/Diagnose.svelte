@@ -8,7 +8,7 @@
   let report = $state<DiagnoseReport | null>(null);
   let error = $state('');
 
-  const STEPS = ['Connect to server', 'Library sync', 'Artwork', 'Browser playback', 'Live TV transcode', 'Direct file access', 'ffmpeg'];
+  const STEPS = ['Connect to server', 'Library sync', 'Artwork', 'Browser playback', 'Live TV transcode', 'Direct file access', 'Intro & credits markers', 'Audio fingerprinting', 'ffmpeg'];
 
   async function run() {
     report = null;

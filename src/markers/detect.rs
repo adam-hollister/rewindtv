@@ -410,7 +410,7 @@ pub async fn run(st: AppState, only_channel: Option<i64>) {
     let mut s = st.detect_status.write().await;
     s.running = false;
     s.current = None;
-    s.message = Some(if total == 0 { "Nothing to scan — every episode on skipping channels has markers".into() } else { format!("Found markers for {found} of {total} episodes") });
+    s.message = Some(if total == 0 { "Nothing new to scan on channels that skip intros/credits".into() } else { format!("Found markers for {found} of {total} episodes") });
     s.finished_at = Some(now_ms());
 }
 

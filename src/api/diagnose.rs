@@ -210,6 +210,50 @@ pub async fn diagnose(State(st): State<AppState>, Path(id): Path<i64>) -> ApiRes
     }
 
     let t = Instant::now();
+    let (eps, intro, credits): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*),
+                SUM(EXISTS (SELECT 1 FROM markers k WHERE k.media_key = m.media_key AND k.kind = 'intro')),
+                SUM(EXISTS (SELECT 1 FROM markers k WHERE k.media_key = m.media_key AND k.kind = 'credits'))
+         FROM media_items m WHERE m.source_id = ? AND m.kind = 'episode' AND m.missing = 0",
+    )
+    .bind(id)
+    .fetch_one(&st.db)
+    .await
+    .map(|(a, b, c): (i64, Option<i64>, Option<i64>)| (a, b.unwrap_or(0), c.unwrap_or(0)))?;
+    let server_markers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM media_items m WHERE m.source_id = ? AND EXISTS
+            (SELECT 1 FROM markers k WHERE k.media_key = m.media_key AND k.source = 'server')",
+    )
+    .bind(id)
+    .fetch_one(&st.db)
+    .await?;
+    push(
+        "Intro & credits markers",
+        t,
+        if eps == 0 {
+            Ok("No TV episodes".into())
+        } else if server_markers == 0 && kind == "plex" {
+            Err(format!(
+                "{intro}/{eps} episodes have saved intro markers, {credits}/{eps} credits (season rules apply on top) — none come from Plex. Turn on \"Generate intro video markers\" and \"Generate credits video markers\" in Plex (Plex Pass), or use auto-detect"
+            ))
+        } else {
+            Ok(format!("{intro}/{eps} episodes have saved intro markers, {credits}/{eps} credits ({server_markers} from the server; season rules apply on top)"))
+        },
+    );
+
+    let t = Instant::now();
+    let muxers = Command::new(&st.cfg.ffmpeg).args(["-hide_banner", "-muxers"]).output().await;
+    push(
+        "Audio fingerprinting",
+        t,
+        match muxers {
+            Ok(o) if String::from_utf8_lossy(&o.stdout).contains("chromaprint") => Ok("ffmpeg has chromaprint — auto-detect can run".into()),
+            Ok(_) => Err("This ffmpeg lacks chromaprint, so auto-detect can't run (Plex and manual markers still work)".into()),
+            Err(e) => Err(e.to_string()),
+        },
+    );
+
+    let t = Instant::now();
     let ff = Command::new(&st.cfg.ffmpeg).arg("-version").output().await;
     push(
         "ffmpeg",

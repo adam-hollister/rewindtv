@@ -1,8 +1,9 @@
 # TrueNAS SCALE (24.10 "Electric Eel" or newer)
 # Apps → Discover Apps → ⋮ → Install via YAML → paste this file.
 #
-# 1. Create a dataset for the app's database first, e.g. /mnt/tank/apps/rewindtv
-#    and change the host path below to match.
+# 1. Create two datasets first, e.g. /mnt/tank/apps/rewindtv (database) and
+#    /mnt/tank/apps/rewindtv-markers (intro/credits markers), and change the
+#    host paths below to match.
 # 2. Set TZ to your time zone.
 services:
   rewindtv:
@@ -16,6 +17,17 @@ services:
       - "8420:8420"
     environment:
       TZ: America/Chicago
+      # Intro/credits markers live in their own folder (one JSON file per
+      # show). Give it its own dataset so it survives a reinstall and can be
+      # shared with another RewindTV install.
+      REWINDTV_MARKERS_DIR: /markers
+      # Optional: with your media folder mounted read-only (below), map the
+      # path your media server uses to the path inside this container so
+      # auto-detect reads files directly instead of over the network.
+      # REWINDTV_PATH_MAP: /data/media=/media
       # REWINDTV_PUBLIC_URL: http://truenas.local:8420
     volumes:
       - /mnt/tank/apps/rewindtv:/data
+      - /mnt/tank/apps/rewindtv-markers:/markers
+      # Optional, read-only — RewindTV never writes to your media:
+      # - /mnt/tank/media:/media:ro
