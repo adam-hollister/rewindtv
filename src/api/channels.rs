@@ -32,6 +32,8 @@ pub struct ProgramOut {
     season: Option<i64>,
     episode: Option<i64>,
     block: Option<String>,
+    /// Intro and/or credits are skipped on air.
+    trimmed: bool,
 }
 
 pub fn img(source: Option<i64>, path: &Option<String>, w: u32) -> Option<String> {
@@ -59,6 +61,7 @@ impl From<&ProgramInfo> for ProgramOut {
             season: p.season,
             episode: p.episode,
             block: p.slot_title.clone(),
+            trimmed: p.cuts.is_some(),
         }
     }
 }
@@ -98,6 +101,10 @@ pub struct ChannelIo {
     avoid_repeat_hours: i64,
     #[serde(default)]
     align_minutes: i64,
+    #[serde(default)]
+    skip_intros: bool,
+    #[serde(default)]
+    skip_credits: bool,
     #[serde(default)]
     slots: Vec<SlotIo>,
 }
@@ -155,6 +162,8 @@ pub async fn get(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<J
         block_size: block,
         avoid_repeat_hours: avoid,
         align_minutes: align,
+        skip_intros: cfg.skip.intros,
+        skip_credits: cfg.skip.credits,
         slots: cfg
             .slots
             .into_iter()
@@ -200,6 +209,16 @@ async fn save_slots(tx: &mut sqlx::SqliteConnection, channel_id: i64, slots: &[S
     Ok(())
 }
 
+async fn save_skip(tx: &mut sqlx::SqliteConnection, channel_id: i64, c: &ChannelIo) -> ApiResult<()> {
+    sqlx::query("UPDATE channels SET skip_intros = ?, skip_credits = ? WHERE id = ?")
+        .bind(c.skip_intros)
+        .bind(c.skip_credits)
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
+}
+
 fn ordering_str(o: Ordering) -> String {
     serde_json::to_value(o).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "shuffle".into())
 }
@@ -239,6 +258,7 @@ async fn insert_channel(st: &AppState, c: &ChannelIo) -> ApiResult<i64> {
     .fetch_one(&mut *tx)
     .await
     .map_err(conflict)?;
+    save_skip(&mut tx, id, c).await?;
     save_slots(&mut tx, id, &c.slots).await?;
     tx.commit().await?;
     Ok(id)
@@ -289,6 +309,7 @@ pub async fn update(State(st): State<AppState>, Path(id): Path<i64>, Json(c): Js
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
+    save_skip(&mut tx, id, &c).await?;
     save_slots(&mut tx, id, &c.slots).await?;
     tx.commit().await?;
     build(&st, &[id], true).await?;
@@ -319,6 +340,8 @@ pub struct PreviewProgram {
     subtitle: Option<String>,
     block: Option<String>,
     filler: bool,
+    /// Intro and/or credits are skipped.
+    trimmed: bool,
 }
 
 /// The next 24 hours of a channel that hasn't been saved yet.
@@ -345,6 +368,7 @@ pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> Ap
         avoid_repeat_hours: c.avoid_repeat_hours,
         align_minutes: c.align_minutes,
         slots: slots.clone(),
+        skip: crate::schedule::cuts::Skip { intros: c.skip_intros, credits: c.skip_credits },
     };
     let now = now_ms();
     let from = now.div_euclid(1_800_000) * 1_800_000;
@@ -367,8 +391,9 @@ pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> Ap
                         },
                         block,
                         filler: false,
+                        trimmed: !p.cuts.is_empty(),
                     },
-                    None => PreviewProgram { start: p.start_ms, end: p.end_ms, title: "Coming Up Next".into(), subtitle: None, block, filler: true },
+                    None => PreviewProgram { start: p.start_ms, end: p.end_ms, title: "Coming Up Next".into(), subtitle: None, block, filler: true, trimmed: false },
                 }
             })
             .collect(),
@@ -441,6 +466,8 @@ pub async fn create_from_suggestions(State(st): State<AppState>, Json(input): Js
             block_size: default_block(),
             avoid_repeat_hours: default_avoid(),
             align_minutes: 0,
+            skip_intros: false,
+            skip_credits: false,
             slots: vec![],
         };
         ids.push(insert_channel(&st, &c).await?);

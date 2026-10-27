@@ -9,6 +9,7 @@
   import Channels from './components/Channels.svelte';
   import ChannelEditor from './components/ChannelEditor.svelte';
   import Settings from './components/Settings.svelte';
+  import ShowMarkers from './components/ShowMarkers.svelte';
 
   onMount(() => {
     installSpatialNav();
@@ -34,6 +35,10 @@
     {/key}
   {:else if page === 'channels'}
     <Channels />
+  {:else if page === 'shows' && route.parts[1]}
+    {#key route.parts[1]}
+      <ShowMarkers showKey={decodeURIComponent(route.parts[1])} />
+    {/key}
   {:else if page === 'settings'}
     <Settings />
   {:else}

@@ -31,9 +31,21 @@ pub struct ProgramInfo {
     pub thumb: Option<String>,
     pub art: Option<String>,
     pub missing: Option<i64>,
+    #[serde(skip)]
+    pub cuts: Option<String>,
 }
 
 impl ProgramInfo {
+    /// File-time ranges skipped while this program airs.
+    pub fn cut_ranges(&self) -> Vec<(i64, i64)> {
+        self.cuts.as_deref().and_then(|c| serde_json::from_str(c).ok()).unwrap_or_default()
+    }
+
+    /// Length of the media file (falls back to the slot length).
+    pub fn media_len(&self) -> i64 {
+        self.duration_ms.unwrap_or(self.end_ms - self.start_ms)
+    }
+
     pub fn is_filler(&self) -> bool {
         self.item_id.is_none() || self.missing == Some(1)
     }
@@ -61,7 +73,7 @@ impl ProgramInfo {
 
 const SELECT: &str = "SELECT p.id, p.channel_id, p.start_ms, p.end_ms, p.slot_id, cs.title AS slot_title,
         p.item_id, m.source_id, m.item_key, m.part_key, m.video_codec, m.kind, m.title, m.show_title, m.season, m.episode,
-        m.year, m.duration_ms, m.summary, m.content_rating, m.thumb, m.art, m.missing
+        m.year, m.duration_ms, m.summary, m.content_rating, m.thumb, m.art, m.missing, p.cuts
     FROM programs p
     LEFT JOIN media_items m ON m.id = p.item_id
     LEFT JOIN channel_slots cs ON cs.id = p.slot_id";

@@ -20,6 +20,7 @@ use crate::db::now_ms;
 use crate::error::{ApiError, ApiResult};
 use crate::guide::{self, ProgramInfo};
 use crate::media::Source;
+use crate::schedule::cuts;
 use crate::schedule::store;
 use crate::state::AppState;
 
@@ -290,21 +291,54 @@ fn ffmpeg_args(st: &AppState, input: Option<&str>, seek_s: f64, length_s: f64) -
     a
 }
 
-/// One program being produced in the background.
-struct Segment {
+/// One stretch of a program to play: the file range [media_start, media_end),
+/// which airs until `air_end`. A program with skipped intro/credits is several
+/// units back to back.
+#[derive(Clone)]
+struct Unit {
     prog: ProgramInfo,
+    range: usize,
+    media_start: i64,
+    media_end: i64,
+    air_end: i64,
+}
+
+/// The unit on air `offset_ms` into a program.
+fn unit_at(prog: ProgramInfo, offset_ms: i64) -> Unit {
+    let len = prog.media_len();
+    let cuts = prog.cut_ranges();
+    let kept = cuts::kept_ranges(len, &cuts);
+    let (pos, range) = cuts::media_pos(len, &cuts, offset_ms);
+    let aired_before: i64 = kept[..range.min(kept.len())].iter().map(|(s, e)| e - s).sum();
+    let (_, end) = kept.get(range).copied().unwrap_or((pos, len));
+    let air_end = prog.start_ms + aired_before + (end - kept.get(range).map_or(pos, |r| r.0));
+    Unit { prog, range, media_start: pos, media_end: end, air_end }
+}
+
+/// The next kept range of the same program, if any.
+fn next_in_program(u: &Unit) -> Option<Unit> {
+    let kept = cuts::kept_ranges(u.prog.media_len(), &u.prog.cut_ranges());
+    let &(s, e) = kept.get(u.range + 1)?;
+    Some(Unit { prog: u.prog.clone(), range: u.range + 1, media_start: s, media_end: e, air_end: u.air_end + (e - s) })
+}
+
+/// One unit being produced in the background.
+struct Segment {
+    unit: Unit,
     rx: mpsc::Receiver<Bytes>,
     got_data: bool,
 }
 
-fn start_segment(st: &AppState, prog: ProgramInfo, offset_ms: i64, bars: bool) -> Segment {
+fn start_segment(st: &AppState, unit: Unit, bars: bool) -> Segment {
     let (tx, rx) = mpsc::channel(512);
-    tokio::spawn(run_segment(st.clone(), prog.clone(), offset_ms, bars, tx));
-    Segment { prog, rx, got_data: false }
+    tokio::spawn(run_segment(st.clone(), unit.clone(), bars, tx));
+    Segment { unit, rx, got_data: false }
 }
 
-async fn run_segment(st: AppState, prog: ProgramInfo, offset_ms: i64, bars: bool, tx: mpsc::Sender<Bytes>) {
-    let length_ms = prog.end_ms - prog.start_ms - offset_ms;
+async fn run_segment(st: AppState, unit: Unit, bars: bool, tx: mpsc::Sender<Bytes>) {
+    let prog = &unit.prog;
+    let offset_ms = unit.media_start;
+    let length_ms = unit.media_end - unit.media_start;
     if length_ms < 300 {
         return;
     }
@@ -316,7 +350,7 @@ async fn run_segment(st: AppState, prog: ProgramInfo, offset_ms: i64, bars: bool
     } else {
         match st.source(prog.source_id.unwrap_or_default()).await {
             Ok(src) if st.cfg.iptv_video == "server" => {
-                let (url, sid, seek) = open_server_session(&st, src, &prog, offset_ms).await;
+                let (url, sid, seek) = open_server_session(&st, src, prog, offset_ms).await;
                 session = Some(sid);
                 seek_s = seek;
                 Some(url)
@@ -350,7 +384,13 @@ async fn run_segment(st: AppState, prog: ProgramInfo, offset_ms: i64, bars: bool
             Ok(0) | Err(_) => break,
             Ok(n) => {
                 if first {
-                    tracing::debug!("program {} first bytes after {:?}", prog.id, started.elapsed());
+                    tracing::debug!(
+                        "program {} file {:.1}s–{:.1}s: first bytes after {:?}",
+                        prog.id,
+                        unit.media_start as f64 / 1000.0,
+                        unit.media_end as f64 / 1000.0,
+                        started.elapsed()
+                    );
                     first = false;
                 }
                 if tx.send(Bytes::copy_from_slice(&buf[..n])).await.is_err() {
@@ -377,7 +417,7 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
     let now = now_ms();
     let first = program_at(&st, channel_id, now).await?.ok_or(ApiError::NotFound)?;
     let offset = now - first.start_ms;
-    let mut cur = start_segment(&st, first, offset, false);
+    let mut cur = start_segment(&st, unit_at(first, offset), false);
 
     let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(64);
     tokio::spawn(async move {
@@ -385,12 +425,14 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
         let mut next: Option<Segment> = None;
         let mut failed: Option<i64> = None;
         loop {
-            // Play the current program to its end.
+            // Play the current unit to its end.
             loop {
-                if next.is_none() && now_ms() >= cur.prog.end_ms - PREFETCH_MS {
-                    if let Ok(Some(p)) = program_at(&st, channel_id, cur.prog.end_ms).await {
-                        next = Some(start_segment(&st, p, 0, false));
-                    }
+                if next.is_none() && now_ms() >= cur.unit.air_end - PREFETCH_MS {
+                    let upcoming = match next_in_program(&cur.unit) {
+                        Some(u) => Some(u),
+                        None => program_at(&st, channel_id, cur.unit.prog.end_ms).await.ok().flatten().map(|p| unit_at(p, 0)),
+                    };
+                    next = upcoming.map(|u| start_segment(&st, u, false));
                 }
                 let out = match tokio::time::timeout(KEEPALIVE, cur.rx.recv()).await {
                     Ok(Some(b)) => {
@@ -413,22 +455,24 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
             }
 
             let now = now_ms();
-            if !cur.got_data && failed != Some(cur.prog.id) && cur.prog.end_ms - now > 1_000 {
+            if !cur.got_data && failed != Some(cur.unit.prog.id) && cur.unit.prog.end_ms - now > 1_000 {
                 // Source failed (file gone, server down): color bars for the rest of it.
-                tracing::warn!("channel {channel_id}: no output for program {}, showing bars", cur.prog.id);
-                failed = Some(cur.prog.id);
-                let prog = cur.prog.clone();
-                cur = start_segment(&st, prog.clone(), now - prog.start_ms, true);
+                tracing::warn!("channel {channel_id}: no output for program {}, showing bars", cur.unit.prog.id);
+                failed = Some(cur.unit.prog.id);
+                let prog = cur.unit.prog.clone();
+                let bars = Unit { media_start: 0, media_end: prog.end_ms - now, air_end: prog.end_ms, range: usize::MAX - 1, prog };
+                drop(next.take());
+                cur = start_segment(&st, bars, true);
                 continue;
             }
             cur = match next.take() {
-                // Only use the prefetched program if we haven't fallen behind.
-                Some(n) if n.prog.end_ms > now + 1_000 => n,
+                // Only use the prefetched unit if we haven't fallen behind.
+                Some(n) if n.unit.air_end > now + 1_000 => n,
                 _ => {
-                    let cursor = cur.prog.end_ms.max(now - 2_000);
+                    let cursor = cur.unit.air_end.max(now - 2_000);
                     let Ok(Some(p)) = program_at(&st, channel_id, cursor).await else { break };
                     let offset = (cursor - p.start_ms).max(0);
-                    start_segment(&st, p, offset, false)
+                    start_segment(&st, unit_at(p, offset), false)
                 }
             };
         }

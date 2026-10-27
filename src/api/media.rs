@@ -47,8 +47,11 @@ pub struct Tune {
     kind: &'static str,
     session: Option<String>,
     url: Option<String>,
-    /// Seconds into the program that "live" is right now.
+    /// Position in the media file (seconds) that "live" is right now —
+    /// skipped intros/credits already accounted for.
     offset: f64,
+    /// Parts of the file that air, in seconds; the player jumps the gaps.
+    kept: Vec<(f64, f64)>,
     /// Full program length in seconds, so the player can tell whether the
     /// server honored the offset or handed back a full-length playlist.
     duration: f64,
@@ -83,6 +86,7 @@ pub async fn tune(State(st): State<AppState>, Path(id): Path<i64>, body: Option<
         session: None,
         url: None,
         offset,
+        kept: vec![(0.0, duration)],
         duration,
         server_time: now,
         program: (&program).into(),
@@ -94,7 +98,13 @@ pub async fn tune(State(st): State<AppState>, Path(id): Path<i64>, body: Option<
 
     let src = st.source(program.source_id.unwrap_or_default()).await?;
     let sid = uuid::Uuid::new_v4().simple().to_string();
-    let offset_ms = now - program.start_ms;
+    let cuts = program.cut_ranges();
+    let (offset_ms, _) = crate::schedule::cuts::media_pos(program.media_len(), &cuts, now - program.start_ms);
+    out.offset = offset_ms as f64 / 1000.0;
+    out.kept = crate::schedule::cuts::kept_ranges(program.media_len(), &cuts)
+        .into_iter()
+        .map(|(s, e)| (s as f64 / 1000.0, e as f64 / 1000.0))
+        .collect();
     let master = src.hls_url(
         program.item_key.as_deref().unwrap_or_default(),
         program.part_key.as_deref(),

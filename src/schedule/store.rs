@@ -30,6 +30,8 @@ struct ItemRow {
     studio: Option<String>,
     genres: Option<String>,
     collections: Option<String>,
+    media_key: Option<String>,
+    provider_ids: Option<String>,
 }
 
 fn split(s: Option<String>) -> Vec<String> {
@@ -42,7 +44,8 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
         "SELECT m.id, m.library_id, m.kind, m.title, m.show_key, m.show_title, m.season, m.episode,
                 m.year, m.duration_ms, m.content_rating, m.studio,
                 (SELECT group_concat(genre, char(31)) FROM item_genres g WHERE g.item_id = m.id) AS genres,
-                (SELECT group_concat(collection, char(31)) FROM item_collections c WHERE c.item_id = m.id) AS collections
+                (SELECT group_concat(collection, char(31)) FROM item_collections c WHERE c.item_id = m.id) AS collections,
+                m.media_key, m.provider_ids
          FROM media_items m
          JOIN libraries l ON l.id = m.library_id
          JOIN sources s ON s.id = m.source_id
@@ -51,9 +54,21 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
     )
     .fetch_all(db)
     .await?;
+    let refs: Vec<crate::markers::ItemRef> = rows
+        .iter()
+        .map(|r| crate::markers::ItemRef {
+            id: r.id,
+            media_key: r.media_key.clone(),
+            provider_ids: r.provider_ids.as_deref().and_then(|p| serde_json::from_str(p).ok()).unwrap_or_default(),
+            season: r.season,
+            duration_ms: r.duration_ms,
+        })
+        .collect();
+    let mut markers = crate::markers::resolved(db, &refs).await?;
     Ok(rows
         .into_iter()
         .map(|r| Item {
+            markers: markers.remove(&r.id).unwrap_or_default(),
             id: r.id,
             library_id: r.library_id,
             is_movie: r.kind == "movie",
@@ -73,8 +88,8 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
 }
 
 pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Option<ChannelConfig>> {
-    let Some((rule, ordering, block_size, avoid, align)) = sqlx::query_as::<_, (String, String, i64, i64, i64)>(
-        "SELECT rule, ordering, block_size, avoid_repeat_hours, align_minutes FROM channels WHERE id = ?",
+    let Some((rule, ordering, block_size, avoid, align, skip_intros, skip_credits)) = sqlx::query_as::<_, (String, String, i64, i64, i64, bool, bool)>(
+        "SELECT rule, ordering, block_size, avoid_repeat_hours, align_minutes, skip_intros, skip_credits FROM channels WHERE id = ?",
     )
     .bind(channel_id)
     .fetch_optional(db)
@@ -107,6 +122,7 @@ pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Opt
         avoid_repeat_hours: avoid,
         align_minutes: align,
         slots,
+        skip: super::cuts::Skip { intros: skip_intros, credits: skip_credits },
     }))
 }
 
@@ -138,12 +154,13 @@ pub async fn extend_channel(db: &SqlitePool, items: &[Item], channel_id: i64, tz
 
     let mut tx = db.begin().await?;
     for p in &programs {
-        sqlx::query("INSERT INTO programs (channel_id, start_ms, end_ms, item_id, slot_id) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO programs (channel_id, start_ms, end_ms, item_id, slot_id, cuts) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(channel_id)
             .bind(p.start_ms)
             .bind(p.end_ms)
             .bind(p.item.map(|ix| items[ix].id))
             .bind(p.slot_id)
+            .bind((!p.cuts.is_empty()).then(|| serde_json::to_string(&p.cuts).unwrap_or_default()))
             .execute(&mut *tx)
             .await?;
     }
@@ -179,6 +196,21 @@ pub async fn extend_all(db: &SqlitePool, tz: Tz, now: i64) -> anyhow::Result<()>
         }
     }
     sqlx::query("DELETE FROM programs WHERE end_ms < ?").bind(now - 24 * 3600 * 1000).execute(db).await?;
+    Ok(())
+}
+
+/// Regenerate programs starting after `keep_until` on channels that skip
+/// intros or credits (after their markers changed).
+pub async fn refresh_skipping(db: &SqlitePool, tz: Tz, keep_until: i64) -> anyhow::Result<()> {
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE skip_intros = 1 OR skip_credits = 1").fetch_all(db).await?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let items = load_items(db).await?;
+    for id in ids {
+        sqlx::query("DELETE FROM programs WHERE channel_id = ? AND start_ms > ?").bind(id).bind(keep_until).execute(db).await?;
+        extend_channel(db, &items, id, tz, crate::db::now_ms()).await?;
+    }
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, emptyRule, type Channel, type Facets, type Ordering, type PreviewProgram, type Slot } from '../lib/api';
+  import { api, emptyRule, type Coverage, type MarkerSettings, type Channel, type Facets, type Ordering, type PreviewProgram, type Slot } from '../lib/api';
   import { session, go, toast } from '../lib/state.svelte';
   import { clock, DAYS, minToTime, timeToMin, daysLabel, duration } from '../lib/time';
   import RuleEditor from './RuleEditor.svelte';
@@ -19,13 +19,39 @@
 
   let ch = $state<Channel>({
     name: '', number: null, color: COLORS[Math.floor(Math.random() * COLORS.length)], owner_user_id: null,
-    rule: emptyRule(), ordering: 'shuffle', block_size: 3, avoid_repeat_hours: 24, align_minutes: 0, slots: [],
+    rule: emptyRule(), ordering: 'shuffle', block_size: 3, avoid_repeat_hours: 24, align_minutes: 0,
+    skip_intros: false, skip_credits: false, slots: [],
   });
   let facets = $state<Facets | null>(null);
   let openSlot = $state<number | null>(null);
   let preview = $state<PreviewProgram[] | null>(null);
   let previewing = $state(false);
   let saving = $state(false);
+  let coverage = $state<Coverage | null>(null);
+  let markerCfg = $state<MarkerSettings | null>(null);
+  let scanning = $state(false);
+
+  const SOURCE_NAMES: Record<string, string> = { server: 'from Plex/Jellyfin', manual: 'set by you', rule: 'season rules', detected: 'auto-detected' };
+
+  async function loadCoverage() {
+    markerCfg = await api.markerSettings();
+    if (id !== null) coverage = await api.channelCoverage(id);
+  }
+
+  async function findMarkers() {
+    if (id === null) return;
+    scanning = true;
+    await api.scanMarkers(id);
+    const t = setInterval(async () => {
+      const s = await api.scanStatus();
+      if (!s.running) {
+        clearInterval(t);
+        scanning = false;
+        toast(s.message ?? 'Scan finished');
+        loadCoverage();
+      }
+    }, 2000);
+  }
 
   onMount(async () => {
     const [f, c] = await Promise.all([api.facets(), id !== null ? api.channel(id) : Promise.resolve(null)]);
@@ -35,6 +61,7 @@
       c.slots.forEach((s) => (s.rule = { ...emptyRule(), ...s.rule }));
       ch = c;
     }
+    loadCoverage();
   });
 
   function addSlot() {
@@ -151,6 +178,42 @@
         </section>
 
         <section class="card pad">
+          <h2>Intros &amp; credits</h2>
+          <p class="muted small sub">Skip the opening theme and the end credits on this channel — great for anime binges. Any scene after the credits still plays, and the guide shows the shorter run time.</p>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" bind:checked={ch.skip_intros} /><span class="sw-ui"></span><span><b>Skip intros</b><span class="small muted">Jump past the opening theme.</span></span></label>
+            <label class="toggle"><input type="checkbox" bind:checked={ch.skip_credits} /><span class="sw-ui"></span><span><b>Skip credits</b><span class="small muted">Post-credit scenes still play.</span></span></label>
+          </div>
+          {#if (ch.skip_intros || ch.skip_credits) && coverage && coverage.episodes > 0}
+            <div class="coverage">
+              <div class="cov-row">
+                <span>Intro markers</span>
+                <div class="bar"><i style:width="{(coverage.intro / coverage.episodes) * 100}%"></i></div>
+                <span class="small">{coverage.intro} of {coverage.episodes} episodes</span>
+              </div>
+              <div class="cov-row">
+                <span>Credits markers</span>
+                <div class="bar"><i style:width="{(coverage.credits / coverage.episodes) * 100}%"></i></div>
+                <span class="small">{coverage.credits} of {coverage.episodes} episodes</span>
+              </div>
+              {#if Object.keys(coverage.by_source).length}
+                <p class="tiny dim">{Object.entries(coverage.by_source).map(([k, n]) => `${n} ${SOURCE_NAMES[k] ?? k}`).join(' · ')}</p>
+              {/if}
+              <div class="row wrap">
+                {#if markerCfg?.sources.detect}
+                  <button type="button" class="btn small" onclick={findMarkers} disabled={scanning || id === null}>{scanning ? 'Scanning…' : 'Find missing markers'}</button>
+                {:else}
+                  <span class="small muted">Episodes without markers play in full. Turn on <a href="#/settings">auto-detect</a> to find the rest, or</span>
+                {/if}
+                <a class="btn small ghost" href="#/settings">Set markers by hand</a>
+              </div>
+            </div>
+          {:else if (ch.skip_intros || ch.skip_credits) && id === null}
+            <p class="tiny dim">Marker coverage shows up here once the channel is saved.</p>
+          {/if}
+        </section>
+
+        <section class="card pad">
           <div class="row"><h2>Time-of-day blocks</h2><div class="spacer"></div><button type="button" class="btn small" onclick={addSlot}>+ Add block</button></div>
           <p class="muted small sub">Program the channel like a real network: cartoons on Saturday mornings, sitcoms at prime time, movies late at night. Outside any block, the channel plays its main lineup above.</p>
           {#if ch.slots.length === 0}
@@ -207,7 +270,7 @@
                 <li class:filler={p.filler}>
                   <span class="tm">{clock(p.start)}</span>
                   <span class="pt"><b>{p.title}</b>{#if p.subtitle}<span class="dim small psub">{p.subtitle}</span>{/if}
-                    {#if p.block}<span class="badge">{p.block}</span>{/if}</span>
+                    {#if p.block}<span class="badge">{p.block}</span>{/if}{#if p.trimmed}<span class="badge" title="Intro/credits skipped">✂</span>{/if}</span>
                   <span class="dim tiny">{duration(p.end - p.start)}</span>
                 </li>
               {/each}
@@ -246,6 +309,17 @@
   .opts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; align-items: end; }
   .opts .field { width: auto; }
   .opts input { width: 160px; }
+  .toggles { display: grid; gap: 10px; }
+  .toggle { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); cursor: pointer; }
+  .toggle > span:last-child { display: grid; gap: 2px; }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .sw-ui { flex: none; width: 44px; height: 26px; border-radius: 999px; background: var(--line-2); position: relative; transition: background 0.15s; }
+  .sw-ui::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+  .toggle input:checked + .sw-ui { background: var(--accent); }
+  .toggle input:checked + .sw-ui::after { transform: translateX(18px); }
+  .toggle input:focus-visible + .sw-ui { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .coverage { margin-top: 14px; display: grid; gap: 10px; }
+  .cov-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center; font-size: 14px; }
   .presets, .days { display: flex; gap: 8px; flex-wrap: wrap; }
   .slots { display: grid; gap: 8px; margin-top: 16px; }
   .slot { border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); }

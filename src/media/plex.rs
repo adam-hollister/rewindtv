@@ -6,7 +6,8 @@ use serde_json::Value;
 use url::Url;
 
 use super::json::{arr, i, s, tags};
-use super::{Library, RemoteItem};
+use super::{Library, RemoteItem, ServerMarker};
+use crate::schedule::cuts::Kind;
 
 const PAGE: usize = 500;
 const CLIENT_ID: &str = "rewindtv";
@@ -80,6 +81,8 @@ impl Plex {
                     &format!("/library/sections/{section}/all"),
                     &[
                         ("type", kind.to_string()),
+                        ("includeMarkers", "1".to_string()),
+                        ("includeGuids", "1".to_string()),
                         ("X-Plex-Container-Start", out.len().to_string()),
                         ("X-Plex-Container-Size", PAGE.to_string()),
                     ],
@@ -173,6 +176,12 @@ impl Plex {
         h
     }
 
+    /// Intro/credits markers (Plex Pass detection) for one item.
+    pub async fn markers(&self, item_key: &str) -> anyhow::Result<Vec<ServerMarker>> {
+        let mc = self.get(&format!("/library/metadata/{item_key}"), &[("includeMarkers", "1".into())]).await?;
+        Ok(arr(&mc, "Metadata").first().map(parse_markers).flatten().unwrap_or_default())
+    }
+
     /// Newer Plex servers want a transcode decision before `start.m3u8`.
     pub async fn decision(&self, hls: &Url) -> anyhow::Result<()> {
         let mut u = hls.clone();
@@ -210,6 +219,32 @@ impl Plex {
     }
 }
 
+/// `Marker` elements of an item; None when the response didn't include them.
+fn parse_markers(v: &Value) -> Option<Vec<ServerMarker>> {
+    let list = v.get("Marker")?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|m| {
+                Some(ServerMarker {
+                    kind: Kind::parse(&s(m, "type")?)?,
+                    start_ms: i(m, "startTimeOffset")?,
+                    end_ms: i(m, "endTimeOffset")?,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// `Guid` entries like `tvdb://123` as `tvdb:123`.
+fn provider_ids(v: &Value) -> Vec<String> {
+    arr(v, "Guid").iter().filter_map(|g| s(g, "id")).filter_map(|id| id.split_once("://").map(|(p, x)| format!("{p}:{x}"))).collect()
+}
+
+fn file_path(v: &Value) -> Option<String> {
+    let media = arr(v, "Media").first()?;
+    s(arr(media, "Part").first()?, "file")
+}
+
 fn video_codec(v: &Value) -> Option<String> {
     s(arr(v, "Media").first()?, "videoCodec")
 }
@@ -224,6 +259,10 @@ fn movie(v: &Value) -> Option<RemoteItem> {
         item_key: s(v, "ratingKey")?,
         part_key: part_key(v),
         video_codec: video_codec(v),
+        file_path: file_path(v),
+        updated_at: i(v, "updatedAt"),
+        provider_ids: provider_ids(v),
+        markers: parse_markers(v),
         kind: "movie",
         title: s(v, "title")?,
         year: i(v, "year"),
@@ -248,6 +287,10 @@ fn episode(v: &Value, show: Option<&Value>) -> Option<RemoteItem> {
         item_key: s(v, "ratingKey")?,
         part_key: part_key(v),
         video_codec: video_codec(v),
+        file_path: file_path(v),
+        updated_at: i(v, "updatedAt"),
+        provider_ids: provider_ids(v),
+        markers: parse_markers(v),
         kind: "episode",
         title: s(v, "title")?,
         show_key: s(v, "grandparentRatingKey"),
@@ -308,6 +351,20 @@ mod tests {
         assert_eq!(browser["directStream"], "1");
         let hevc: HashMap<String, String> = p.hls_url("42", 0, "abc", false).query_pairs().into_owned().collect();
         assert_eq!(hevc["directStream"], "0", "non-H.264 sources are transcoded for browsers");
+    }
+
+    #[test]
+    fn parses_plex_markers() {
+        let v = serde_json::json!({"Marker": [
+            {"id": 1, "type": "intro", "startTimeOffset": 61000, "endTimeOffset": 150500},
+            {"id": 2, "type": "credits", "startTimeOffset": 1260000, "endTimeOffset": 1380000, "final": true},
+            {"id": 3, "type": "commercial", "startTimeOffset": 1, "endTimeOffset": 2}
+        ]});
+        let m = parse_markers(&v).unwrap();
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[0], ServerMarker { kind: Kind::Intro, start_ms: 61000, end_ms: 150500 });
+        assert_eq!(m[1].kind, Kind::Credits);
+        assert!(parse_markers(&serde_json::json!({"title": "x"})).is_none());
     }
 
     #[test]

@@ -170,6 +170,7 @@
           <span>{duration(sel.p.end - sel.p.start)}</span>
           {#if sel.p.rating}<span class="badge">{sel.p.rating}</span>{/if}
           {#if sel.p.year && sel.p.kind === 'episode'}<span>{sel.p.year}</span>{/if}
+          {#if sel.p.trimmed}<span class="badge" title="This channel skips intros/credits">✂ intro/credits skipped</span>{/if}
         </div>
         {#if sel.p.summary}<p class="summary">{sel.p.summary}</p>{/if}
         <div class="row actions">

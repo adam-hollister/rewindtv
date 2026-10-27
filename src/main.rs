@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod error;
 mod guide;
+mod markers;
 mod media;
 mod schedule;
 mod state;
@@ -40,9 +41,18 @@ async fn main() -> anyhow::Result<()> {
         http,
         sessions: Default::default(),
         sync_status: Default::default(),
+        detect_status: Default::default(),
         guide_lock: Default::default(),
     };
 
+    if let Err(e) = markers::files::restore_sources(&state.db, &state.cfg.markers_dir).await {
+        tracing::warn!("reading marker settings: {e:#}");
+    }
+    match markers::files::import_all(&state.db, &state.cfg.markers_dir).await {
+        Ok(n) if n > 0 => tracing::info!("loaded {n} markers from {}", state.cfg.markers_dir.display()),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("reading marker files: {e:#}"),
+    }
     spawn_background(state.clone());
 
     let app = api::router()

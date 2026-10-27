@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import Hls from 'hls.js';
+  import { playlistSeconds } from '../lib/hls';
   import { api, type ChannelListItem, type Tune } from '../lib/api';
   import { session, go, clockState } from '../lib/state.svelte';
   import { clock, range, progress, minutesLeft } from '../lib/time';
@@ -26,6 +27,12 @@
   let overlayTimer: ReturnType<typeof setTimeout> | undefined;
   let digitTimer: ReturnType<typeof setTimeout> | undefined;
   let retries = 0;
+  // Skipped intros/credits: file ranges that air, and the file position that
+  // currentTime 0 corresponds to (non-zero when the server started at an offset).
+  let kept: [number, number][] = [];
+  let base = 0;
+  let lastJump = 0;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
   let destroyed = false;
 
   const now = $derived(clockState.now);
@@ -39,24 +46,6 @@
     overlayTimer = setTimeout(() => {
       if (!miniGuide) overlay = false;
     }, ms);
-  }
-
-  /** Total length of the first variant playlist, to see whether the server
-   *  started at our offset or returned the whole program. */
-  async function playlistSeconds(url: string): Promise<number> {
-    try {
-      let text = await (await fetch(url)).text();
-      if (text.includes('#EXT-X-STREAM-INF')) {
-        const lines = text.split('\n');
-        const i = lines.findIndex((l) => l.startsWith('#EXT-X-STREAM-INF'));
-        const variant = lines.slice(i + 1).find((l) => l.trim() && !l.startsWith('#'));
-        if (!variant) return 0;
-        text = await (await fetch(new URL(variant.trim(), new URL(url, location.href)).toString())).text();
-      }
-      return [...text.matchAll(/#EXTINF:([\d.]+)/g)].reduce((s, m) => s + parseFloat(m[1]), 0);
-    } catch {
-      return 0;
-    }
   }
 
   function teardown() {
@@ -101,6 +90,8 @@
     // back the whole program (playlist ≈ full duration)? Pick the closer one.
     const fullLength = total > 0 && Math.abs(total - t.duration) < Math.abs(total - remaining);
     const pos = () => (fullLength ? t.offset + (Date.now() - tunedAt) / 1000 : 0);
+    kept = t.kept ?? [];
+    base = fullLength ? 0 : t.offset;
 
     if (Hls.isSupported()) {
       hls = new Hls({ startPosition: pos(), maxBufferLength: 30, backBufferLength: 60, enableWorker: true });
@@ -125,6 +116,23 @@
     }
     play();
   }
+
+  /** Jump over skipped intros/credits. */
+  function skipCuts() {
+    if (kept.length < 2 && !(kept.length === 1 && kept[0][0] > 0)) return;
+    const media = base + video.currentTime;
+    const i = kept.findIndex(([, e]) => media < e - 0.25);
+    if (i < 0) return; // past the last range: the program-end retune takes over
+    const start = kept[i][0];
+    if (media < start - 0.5 && Date.now() - lastJump > 1000) {
+      lastJump = Date.now();
+      video.currentTime = start - base;
+      // If the server is slow to resume after the jump, tune in fresh.
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => buffering && !destroyed && start_(), 8000);
+    }
+  }
+  const start_ = () => start(sessionId);
 
   async function play() {
     try {
@@ -274,6 +282,7 @@
     teardown();
     clearTimeout(overlayTimer);
     clearTimeout(digitTimer);
+    clearTimeout(stallTimer);
     if (sessionId) api.stopSession(sessionId);
   });
 
@@ -295,7 +304,7 @@
   ontouchend={touchend}
 >
   <!-- svelte-ignore a11y_media_has_caption -->
-  <video bind:this={video} playsinline onwaiting={() => (buffering = true)} onplaying={() => (buffering = false)} onended={() => start(sessionId)}></video>
+  <video bind:this={video} playsinline ontimeupdate={skipCuts} onwaiting={() => (buffering = true)} onplaying={() => (buffering = false)} onended={() => start(sessionId)}></video>
 
   {#if tune?.kind === 'filler' && p}
     <div class="slate">
@@ -362,6 +371,7 @@
           <span class="live-dot"></span> LIVE
           {#if p.block}<span class="badge">{p.block}</span>{/if}
           {#if p.rating}<span class="badge">{p.rating}</span>{/if}
+          {#if p.trimmed}<span class="badge">✂ skipping intro/credits</span>{/if}
         </div>
         <div class="b-title">{p.title}</div>
         {#if p.subtitle}<div class="b-sub">{p.subtitle}</div>{/if}

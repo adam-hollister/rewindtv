@@ -39,6 +39,7 @@ export interface Program {
   season: number | null;
   episode: number | null;
   block: string | null;
+  trimmed: boolean;
 }
 
 export interface ChannelRow {
@@ -78,6 +79,8 @@ export interface Channel {
   block_size: number;
   avoid_repeat_hours: number;
   align_minutes: number;
+  skip_intros: boolean;
+  skip_credits: boolean;
   slots: Slot[];
 }
 
@@ -86,6 +89,7 @@ export interface Tune {
   session: string | null;
   url: string | null;
   offset: number;
+  kept: [number, number][];
   duration: number;
   server_time: number;
   program: Program;
@@ -107,7 +111,16 @@ export interface Facets {
 }
 export interface RulePreview { items: number; hours: number; shows: number; movies: number; sample: string[] }
 export interface Suggestion { kind: string; name: string; rule: Rule; ordering: Ordering; items: number; hours: number }
-export interface PreviewProgram { start: number; end: number; title: string; subtitle: string | null; block: string | null; filler: boolean }
+export interface PreviewProgram { start: number; end: number; title: string; subtitle: string | null; block: string | null; filler: boolean; trimmed: boolean }
+export interface MarkerSources { server: boolean; manual: boolean; detect: boolean }
+export interface Coverage { episodes: number; intro: number; credits: number; by_source: Record<string, number> }
+export interface DetectStatus { running: boolean; current: string | null; done: number; total: number; found: number; message: string | null; finished_at: number | null }
+export interface MarkerSettings { sources: MarkerSources; detect: DetectStatus; coverage: Coverage; markers_dir: string; local_media: boolean }
+export interface ShowCoverage { key: string; title: string; episodes: number; intro: number; credits: number }
+export interface MarkerOut { kind: 'intro' | 'credits'; source: 'manual' | 'rule' | 'server' | 'detected'; start_ms: number; end_ms: number }
+export interface EpisodeMarkers { media_key: string; item_id: number; season: number; episode: number; title: string; duration_ms: number; candidates: MarkerOut[]; resolved: MarkerOut[] }
+export interface MarkerRule { show_key: string; season: number | null; kind: 'intro' | 'credits'; start_ms: number; end_ms: number; from_end: boolean; updated_at?: number }
+export interface ShowMarkers { key: string; title: string; rules: MarkerRule[]; episodes: EpisodeMarkers[] }
 export interface PlexPin { id: number; code: string; link_url: string }
 export interface PlexServer {
   name: string; owned: boolean; token: string; best: string | null;
@@ -152,6 +165,17 @@ export const api = {
   plexPin: () => req<PlexPin>('POST', '/api/plex/pin'),
   plexPinStatus: (id: number) => req<{ token: string | null }>('GET', `/api/plex/pin/${id}`),
   plexServers: (token: string) => req<PlexServer[]>('GET', `/api/plex/servers?token=${encodeURIComponent(token)}`),
+  markerSettings: () => req<MarkerSettings>('GET', '/api/markers/settings'),
+  setMarkerSources: (s: MarkerSources) => req<null>('PUT', '/api/markers/settings', s),
+  scanMarkers: (channel_id?: number) => req<DetectStatus>('POST', '/api/markers/scan', { channel_id: channel_id ?? null }),
+  scanStatus: () => req<DetectStatus>('GET', '/api/markers/scan'),
+  markerShows: () => req<ShowCoverage[]>('GET', '/api/markers/shows'),
+  showMarkers: (key: string) => req<ShowMarkers>('GET', `/api/markers/show?key=${encodeURIComponent(key)}`),
+  setEpisodeMarker: (media_key: string, kind: string, range: [number, number] | null) => req<null>('PUT', '/api/markers/episode', { media_key, kind, range }),
+  saveMarkerRule: (r: MarkerRule) => req<null>('PUT', '/api/markers/rule', r),
+  deleteMarkerRule: (show_key: string, season: number | null, kind: string) => req<null>('DELETE', '/api/markers/rule', { show_key, season, kind }),
+  playItem: (id: number, at: number) => req<{ url: string; session: string; offset: number; duration: number }>('POST', `/api/items/${id}/play?at=${Math.round(at)}`),
+  channelCoverage: (id: number) => req<Coverage>('GET', `/api/channels/${id}/markers`),
   syncStatus: () => req<SyncStatus>('GET', '/api/sync'),
   syncNow: () => req<SyncStatus>('POST', '/api/sync'),
 

@@ -6,7 +6,8 @@ use serde_json::Value;
 use url::Url;
 
 use super::json::{arr, i, s};
-use super::{Library, RemoteItem};
+use super::{Library, RemoteItem, ServerMarker};
+use crate::schedule::cuts::Kind;
 
 const PAGE: usize = 500;
 const TICKS_PER_MS: i64 = 10_000;
@@ -129,7 +130,7 @@ impl Jellyfin {
     }
 
     pub async fn items(&self, lib: &Library) -> anyhow::Result<Vec<RemoteItem>> {
-        const FIELDS: &str = "Genres,Studios,Overview,OfficialRating,ProductionYear,PremiereDate";
+        const FIELDS: &str = "Genres,Studios,Overview,OfficialRating,ProductionYear,PremiereDate,ProviderIds,DateLastSaved,Path";
         let collections = self.collections().await.unwrap_or_default();
         let series: HashMap<String, Value> = self
             .query_all(Some(&lib.key), "Series", FIELDS)
@@ -197,6 +198,17 @@ impl Jellyfin {
         u
     }
 
+    /// Media segments (Jellyfin 10.10+, filled by plugins such as Intro
+    /// Skipper). None when the server has no segments API.
+    pub async fn markers(&self, item_key: &str) -> anyhow::Result<Option<Vec<ServerMarker>>> {
+        let res = self.http.get(self.url(&format!("/MediaSegments/{item_key}"))).headers(self.auth_headers()).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let v: Value = res.error_for_status()?.json().await?;
+        Ok(Some(parse_segments(&v)))
+    }
+
     pub async fn stop(&self, session: &str) -> anyhow::Result<()> {
         self.http
             .delete(self.url("/Videos/ActiveEncodings"))
@@ -212,6 +224,20 @@ impl Jellyfin {
         u.query_pairs_mut().append_pair("maxWidth", &width.to_string()).append_pair("quality", "85");
         u
     }
+}
+
+fn parse_segments(v: &Value) -> Vec<ServerMarker> {
+    arr(v, "Items")
+        .iter()
+        .filter_map(|seg| {
+            let kind = match s(seg, "Type")?.as_str() {
+                "Intro" => Kind::Intro,
+                "Outro" => Kind::Credits,
+                _ => return None,
+            };
+            Some(ServerMarker { kind, start_ms: i(seg, "StartTicks")? / TICKS_PER_MS, end_ms: i(seg, "EndTicks")? / TICKS_PER_MS })
+        })
+        .collect()
 }
 
 fn first_studio(v: &Value) -> Option<String> {
@@ -235,6 +261,13 @@ fn parse_item(v: &Value, show: Option<&Value>) -> Option<RemoteItem> {
     let year = i(v, "ProductionYear").or_else(|| s(v, "PremiereDate").and_then(|d| d.get(..4)?.parse().ok()));
     let mut item = RemoteItem {
         part_key: Some(id.clone()),
+        file_path: s(v, "Path"),
+        provider_ids: v
+            .get("ProviderIds")
+            .and_then(Value::as_object)
+            .map(|m| m.iter().filter_map(|(k, x)| Some(format!("{}:{}", k.to_lowercase(), x.as_str().filter(|x| !x.is_empty())?))).collect())
+            .unwrap_or_default(),
+        updated_at: s(v, "DateLastSaved").and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|d| d.timestamp()),
         title: s(v, "Name")?,
         year,
         duration_ms: ticks / TICKS_PER_MS,
@@ -298,6 +331,20 @@ mod tests {
         assert_eq!(item.studio.as_deref(), Some("Fox Kids"));
         assert_eq!(item.thumb.as_deref(), Some("/Items/s1/Images/Primary"));
         assert_eq!(item.show_key.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn parses_media_segments() {
+        let v = serde_json::json!({"Items": [
+            {"Type": "Intro", "StartTicks": 600_000_000i64, "EndTicks": 1_500_000_000i64},
+            {"Type": "Recap", "StartTicks": 0, "EndTicks": 10},
+            {"Type": "Outro", "StartTicks": 12_600_000_000i64, "EndTicks": 13_800_000_000i64}
+        ]});
+        let m = parse_segments(&v);
+        assert_eq!(m, vec![
+            ServerMarker { kind: Kind::Intro, start_ms: 60_000, end_ms: 150_000 },
+            ServerMarker { kind: Kind::Credits, start_ms: 1_260_000, end_ms: 1_380_000 },
+        ]);
     }
 
     #[test]

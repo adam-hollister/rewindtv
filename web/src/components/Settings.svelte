@@ -5,6 +5,7 @@
   import Modal from './Modal.svelte';
   import PlexSignIn from './PlexSignIn.svelte';
   import Diagnose from './Diagnose.svelte';
+  import MarkersCard from './MarkersCard.svelte';
 
   let sources = $state<Source[]>([]);
   let status = $state<Status | null>(null);
@@ -148,6 +149,8 @@
       {/each}
     </div>
   </section>
+
+  <MarkersCard />
 
   <section class="card pad">
     <h2>Profiles</h2>

@@ -2,6 +2,7 @@
 //! programs generated server-side, so every viewer sees the same thing.
 
 pub mod autogen;
+pub mod cuts;
 pub mod ordering;
 pub mod rule;
 pub mod slots;
@@ -31,6 +32,7 @@ pub struct ChannelConfig {
     pub avoid_repeat_hours: i64,
     pub align_minutes: i64,
     pub slots: Vec<Slot>,
+    pub skip: cuts::Skip,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +42,8 @@ pub struct Program {
     /// Index into the items slice; `None` is filler.
     pub item: Option<usize>,
     pub slot_id: Option<i64>,
+    /// File-time ranges skipped while this program airs.
+    pub cuts: Vec<(i64, i64)>,
 }
 
 /// Round `t_ms` up to the next multiple of `minutes` in local time.
@@ -91,6 +95,12 @@ pub fn generate<R: Rng>(
             .clone()
     };
     let avoid_ms = cfg.avoid_repeat_hours.max(0) * 60 * MINUTE;
+    // What each item loses to intro/credits skipping on this channel.
+    let item_cuts: Vec<Vec<(i64, i64)>> = items
+        .iter()
+        .map(|it| if cfg.skip.any() { cuts::cuts_for(&it.markers, it.duration_ms, cfg.skip) } else { Vec::new() })
+        .collect();
+    let air_len = |ix: usize| cuts::effective_len(items[ix].duration_ms, &item_cuts[ix]);
 
     let mut out = Vec::new();
     let mut t = from_ms;
@@ -102,7 +112,7 @@ pub fn generate<R: Rng>(
 
         if let Some(b) = boundary {
             if b - t < MIN_SLOT_REMAINDER {
-                push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id });
+                push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id, cuts: Vec::new() });
                 t = b;
                 continue;
             }
@@ -119,11 +129,11 @@ pub fn generate<R: Rng>(
         let snapshot = state.pools.get(&pool_key).cloned();
         let Some(ix) = picker.next(&pool_key, state, t, rng) else {
             let end = boundary.map_or(t + EMPTY_FILLER, |b| b.min(t + EMPTY_FILLER));
-            push(&mut out, Program { start_ms: t, end_ms: end, item: None, slot_id });
+            push(&mut out, Program { start_ms: t, end_ms: end, item: None, slot_id, cuts: Vec::new() });
             t = end;
             continue;
         };
-        let end = t + items[ix].duration_ms;
+        let end = t + air_len(ix);
 
         // Blocks start on time: if this pick would run into the next block,
         // give it back and air something shorter from the pool instead.
@@ -134,11 +144,11 @@ pub fn generate<R: Rng>(
                     None => state.pools.remove(&pool_key),
                 };
                 let recent: Vec<i64> = state.recent.iter().map(|(id, _)| *id).collect();
-                let fits: Vec<usize> = pool.iter().copied().filter(|&i| items[i].duration_ms <= b - t).collect();
+                let fits: Vec<usize> = pool.iter().copied().filter(|&i| air_len(i) <= b - t).collect();
                 let fresh: Vec<usize> = fits.iter().copied().filter(|i| !recent.contains(&items[*i].id)).collect();
                 let choices = if fresh.is_empty() { &fits } else { &fresh };
                 if choices.is_empty() {
-                    push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id });
+                    push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id, cuts: Vec::new() });
                     t = b;
                     continue;
                 }
@@ -146,16 +156,16 @@ pub fn generate<R: Rng>(
             }
             _ => ix,
         };
-        let end = t + items[ix].duration_ms;
+        let end = t + air_len(ix);
 
         state.record(items[ix].id, t, avoid_ms.max(MINUTE));
-        push(&mut out, Program { start_ms: t, end_ms: end, item: Some(ix), slot_id });
+        push(&mut out, Program { start_ms: t, end_ms: end, item: Some(ix), slot_id, cuts: item_cuts[ix].clone() });
         t = end;
 
         let aligned = align_up(t, cfg.align_minutes, tz);
         let aligned = boundary.filter(|&b| b > t).map_or(aligned, |b| aligned.min(b));
         if aligned > t {
-            push(&mut out, Program { start_ms: t, end_ms: aligned, item: None, slot_id });
+            push(&mut out, Program { start_ms: t, end_ms: aligned, item: None, slot_id, cuts: Vec::new() });
             t = aligned;
         }
     }
@@ -194,6 +204,7 @@ mod tests {
             avoid_repeat_hours: 6,
             align_minutes: align,
             slots,
+            skip: cuts::Skip::default(),
         }
     }
 

@@ -23,6 +23,14 @@ pub struct RemoteItem {
     pub item_key: String,
     pub part_key: Option<String>,
     pub video_codec: Option<String>,
+    /// The file's path as the server sees it.
+    pub file_path: Option<String>,
+    /// Server's last-modified time, used to refetch markers when it changes.
+    pub updated_at: Option<i64>,
+    /// Provider ids such as "tvdb:81189" or "imdb:tt0213338".
+    pub provider_ids: Vec<String>,
+    /// Intro/credits markers if the library listing included them.
+    pub markers: Option<Vec<ServerMarker>>,
     pub kind: &'static str,
     pub title: String,
     pub show_key: Option<String>,
@@ -38,6 +46,14 @@ pub struct RemoteItem {
     pub art: Option<String>,
     pub genres: Vec<String>,
     pub collections: Vec<String>,
+}
+
+/// An intro/credits marker as reported by the media server (file time, ms).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ServerMarker {
+    pub kind: crate::schedule::cuts::Kind,
+    pub start_ms: i64,
+    pub end_ms: i64,
 }
 
 /// One configured server. Constructed from a `sources` row whenever needed;
@@ -114,6 +130,15 @@ impl Source {
             if let Err(e) = p.decision(hls).await {
                 tracing::debug!("plex decision: {e:#}");
             }
+        }
+    }
+
+    /// Intro/credits markers for one item. `Ok(None)` means the server can't
+    /// provide markers at all (e.g. Jellyfin without a segments plugin).
+    pub async fn markers(&self, item_key: &str) -> anyhow::Result<Option<Vec<ServerMarker>>> {
+        match self {
+            Source::Plex(p) => p.markers(item_key).await.map(Some),
+            Source::Jellyfin(j) => j.markers(item_key).await,
         }
     }
 

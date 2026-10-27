@@ -23,6 +23,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub sessions: Sessions,
     pub sync_status: Arc<RwLock<SyncStatus>>,
+    pub detect_status: Arc<RwLock<crate::markers::detect::Status>>,
     /// Serializes guide generation so concurrent edits don't interleave programs.
     pub guide_lock: Arc<Mutex<()>>,
 }

@@ -46,3 +46,23 @@ export function daysLabel(mask: number): string {
   if (mask === 96) return 'Weekends';
   return DAYS.filter((_, i) => mask & (1 << i)).join(', ');
 }
+
+/** 92500 -> "1:32.5" (tenths only when present). */
+export function mmss(ms: number): string {
+  const neg = ms < 0;
+  const t = Math.abs(ms) / 1000;
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  const ss = Number.isInteger(Math.round(s * 10) / 10) ? Math.round(s).toString().padStart(2, '0') : s.toFixed(1).padStart(4, '0');
+  return `${neg ? '-' : ''}${m}:${ss}`;
+}
+
+/** "1:32", "92", "1:32.5" -> ms; null if not a time. */
+export function parseMmss(v: string): number | null {
+  const t = v.trim();
+  if (!t) return null;
+  const parts = t.split(':').map(Number);
+  if (parts.some((p) => !Number.isFinite(p) || p < 0)) return null;
+  const secs = parts.reduce((acc, p) => acc * 60 + p, 0);
+  return Math.round(secs * 1000);
+}

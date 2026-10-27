@@ -1,6 +1,7 @@
 mod channels;
 mod diagnose;
 mod library;
+mod markers;
 mod media;
 mod plex;
 mod sources;
@@ -35,6 +36,15 @@ pub fn router() -> Router<AppState> {
         .route("/api/channels/rebuild", post(channels::rebuild_all))
         .route("/api/channels/{id}", get(channels::get).put(channels::update).delete(channels::remove))
         .route("/api/channels/{id}/rebuild", post(channels::rebuild))
+        .route("/api/channels/{id}/markers", get(markers::channel_coverage))
+        .route("/api/markers/settings", get(markers::settings).put(markers::set_settings))
+        .route("/api/markers/scan", get(markers::scan_status).post(markers::scan))
+        .route("/api/markers/shows", get(markers::shows))
+        .route("/api/markers/show", get(markers::show))
+        .route("/api/markers/episode", put(markers::edit_episode))
+        .route("/api/markers/episode/{id}/kept", get(markers::preview_cuts))
+        .route("/api/items/{id}/play", post(markers::play_item))
+        .route("/api/markers/rule", put(markers::save_rule).delete(markers::delete_rule))
         .route("/api/channels/{id}/logo.svg", get(media::logo))
         .route("/api/channels/{id}/tune", post(media::tune))
         .route("/api/sessions/{sid}", axum::routing::delete(media::stop_session))

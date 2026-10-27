@@ -5,6 +5,12 @@ use chrono_tz::Tz;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub data_dir: PathBuf,
+    /// Intro/credits marker files, kept apart from the media.
+    pub markers_dir: PathBuf,
+    /// Server path prefix -> local path prefix, for reading media straight
+    /// from a mounted folder (faster marker detection). From
+    /// REWINDTV_PATH_MAP="/data/media=/media;/mnt/tv=/tv".
+    pub path_maps: Vec<(String, String)>,
     pub port: u16,
     /// Time zone used for time-of-day blocks and guide alignment.
     pub tz: Tz,
@@ -35,8 +41,13 @@ impl Config {
             .parse::<Tz>()
             .map_err(|e| anyhow::anyhow!("invalid TZ {tz_name:?}: {e}"))?;
         let ffmpeg = env("REWINDTV_FFMPEG").unwrap_or_else(|| "ffmpeg".into());
+        let data_dir: PathBuf = env("REWINDTV_DATA").unwrap_or_else(|| "/data".into()).into();
         Ok(Self {
-            data_dir: env("REWINDTV_DATA").unwrap_or_else(|| "/data".into()).into(),
+            path_maps: env("REWINDTV_PATH_MAP")
+                .map(|v| v.split(';').filter_map(|p| p.split_once('=')).map(|(a, b)| (a.trim().to_string(), b.trim().to_string())).collect())
+                .unwrap_or_default(),
+            markers_dir: env("REWINDTV_MARKERS_DIR").map(PathBuf::from).unwrap_or_else(|| data_dir.join("markers")),
+            data_dir,
             port: env("REWINDTV_PORT").and_then(|p| p.parse().ok()).unwrap_or(8420),
             tz,
             public_url: env("REWINDTV_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),

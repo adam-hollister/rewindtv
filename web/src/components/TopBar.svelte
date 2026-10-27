@@ -18,7 +18,7 @@
   </a>
   <nav>
     {#each tabs as [id, label]}
-      <a href="#/{id}" class:on={page === id}>{label}</a>
+      <a href="#/{id}" class:on={page === id || (id === 'settings' && page === 'shows')}>{label}</a>
     {/each}
   </nav>
   <div class="spacer"></div>

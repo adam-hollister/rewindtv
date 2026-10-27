@@ -19,6 +19,8 @@ pub struct Item {
     pub studio: Option<String>,
     pub genres: Vec<String>,
     pub collections: Vec<String>,
+    /// Intro/credits markers, already filtered to the enabled sources.
+    pub markers: Vec<super::cuts::Marker>,
 }
 
 impl Item {
