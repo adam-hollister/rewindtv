@@ -16,6 +16,9 @@ pub struct Config {
     pub tz: Tz,
     /// Base URL used in M3U/XMLTV links. Derived from the request when unset.
     pub public_url: Option<String>,
+    /// Extra host names RewindTV answers to besides IPs and local names
+    /// (REWINDTV_ALLOWED_HOSTS, comma separated; the public URL's host is included).
+    pub allowed_hosts: Vec<String>,
     /// How Live TV / IPTV streams get their video:
     /// "server" (default) has Plex/Jellyfin transcode every program to the same
     /// 1080p H.264 + AAC; "copy" passes original files through untouched;
@@ -51,6 +54,12 @@ impl Config {
             port: env("REWINDTV_PORT").and_then(|p| p.parse().ok()).unwrap_or(8420),
             tz,
             public_url: env("REWINDTV_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),
+            allowed_hosts: env("REWINDTV_ALLOWED_HOSTS")
+                .into_iter()
+                .flat_map(|v| v.split(',').map(|h| h.trim().to_string()).collect::<Vec<_>>())
+                .chain(env("REWINDTV_PUBLIC_URL"))
+                .filter(|h| !h.is_empty())
+                .collect(),
             iptv_video: env("REWINDTV_IPTV_VIDEO").unwrap_or_else(|| "server".into()),
             ffmpeg: ffmpeg.clone(),
             // ffprobe ships next to ffmpeg (also in jellyfin-ffmpeg).

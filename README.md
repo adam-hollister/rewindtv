@@ -45,7 +45,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 
 These steps are for TrueNAS SCALE 24.10 "Electric Eel" or newer.
 
-1. **Create a dataset** for the app's data, for example `tank/apps/rewindtv`.
+1. **Create two datasets** with the **Apps** permission preset (RewindTV runs as the `apps` user, uid 568): one for the app's data, e.g. `tank/apps/rewindtv`, and one for intro/credits markers, e.g. `tank/apps/rewindtv-markers`.
 2. Go to **Apps → Discover Apps → ⋮ (top right) → Install via YAML**.
 3. Paste [`truenas/rewindtv.yaml`](truenas/rewindtv.yaml). Change the host path to your dataset and `TZ` to your time zone.
 4. Open `http://<truenas-ip>:8420`, create a profile, then go to **Settings → Add server**.
@@ -156,9 +156,24 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 | `REWINDTV_IPTV_VIDEO` | `server` | Live TV/IPTV video. `server`: Plex/Jellyfin transcodes every program to identical 1080p H.264. `copy`: original files untouched, lowest CPU, but codec changes between shows can upset players. `h264`: RewindTV re-encodes with its own ffmpeg. |
 | `REWINDTV_MARKERS_DIR` | `/data/markers` | Intro/credits marker files (one JSON per show); give it its own dataset to keep it across reinstalls |
 | `REWINDTV_PATH_MAP` | *(none)* | `server_path=container_path;…` so auto-detect reads a read-only media mount directly |
+| `REWINDTV_ALLOWED_HOSTS` | *(none)* | Extra host names RewindTV answers to, comma separated (IPs, `localhost`, single-word names and `.local`/`.lan`/`.home.arpa` names always work) |
 | `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
 | `REWINDTV_SYNC_HOURS` | `6` | Library sync interval |
 | `REWINDTV_HDHR_PROFILE` | `0` | Profile whose lineup the HDHomeRun tuner (for Plex) exposes; `0` = shared channels |
+
+## Security on a home network
+
+RewindTV has no login, by design: anyone on your network can pick a profile. These safeguards are always on:
+
+- **Your media server's token stays on the server.**
+  - Video and artwork go through RewindTV, which only ever forwards requests to your media server itself.
+  - Tokens are stripped from playlists and masked in error messages and logs.
+  - "Sign in with Plex" sends the token in a request body, never in a URL.
+- **Websites can't drive it through your browser.** Other sites' pages can't change anything (cross-site requests are refused). RewindTV only answers to IPs and local names, which blocks "DNS rebinding". If you reach it through your own domain name, add it to `REWINDTV_ALLOWED_HOSTS` or `REWINDTV_PUBLIC_URL`.
+- **It runs unprivileged.** The container runs as uid/gid 568 (TrueNAS's `apps` user) and never writes to your media.
+- **Resource limits.** Simultaneous Live TV streams are capped, abandoned transcodes are stopped, and media-server calls time out instead of hanging.
+
+Don't expose port 8420 to the internet. Use a VPN (WireGuard, Tailscale) to watch away from home.
 
 ## How it works
 

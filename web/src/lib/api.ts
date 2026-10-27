@@ -164,7 +164,7 @@ export const api = {
   diagnose: (id: number) => req<DiagnoseReport>('POST', `/api/sources/${id}/diagnose`),
   plexPin: () => req<PlexPin>('POST', '/api/plex/pin'),
   plexPinStatus: (id: number) => req<{ token: string | null }>('GET', `/api/plex/pin/${id}`),
-  plexServers: (token: string) => req<PlexServer[]>('GET', `/api/plex/servers?token=${encodeURIComponent(token)}`),
+  plexServers: (token: string) => req<PlexServer[]>('POST', '/api/plex/servers', { token }),
   markerSettings: () => req<MarkerSettings>('GET', '/api/markers/settings'),
   setMarkerSources: (s: MarkerSources) => req<null>('PUT', '/api/markers/settings', s),
   scanMarkers: (channel_id?: number) => req<DetectStatus>('POST', '/api/markers/scan', { channel_id: channel_id ?? null }),

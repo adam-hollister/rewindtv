@@ -47,13 +47,15 @@ pub struct MarkerSettings {
 
 /// Re-apply markers to channels that skip, keeping what's on air now.
 async fn refresh(st: &AppState) -> ApiResult<()> {
+    st.invalidate_items().await;
     let _guard = st.guide_lock.lock().await;
-    store::refresh_skipping(&st.db, st.cfg.tz, now_ms()).await?;
+    let items = st.items().await?;
+    store::refresh_skipping(&st.db, &items, st.cfg.tz, now_ms()).await?;
     Ok(())
 }
 
 pub async fn settings(State(st): State<AppState>) -> ApiResult<Json<MarkerSettings>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let eps: Vec<Vec<Marker>> = items.iter().filter(|i| !i.is_movie).map(|i| i.markers.clone()).collect();
     Ok(Json(MarkerSettings {
         sources: markers::sources(&st.db).await,
@@ -96,7 +98,7 @@ pub async fn scan_status(State(st): State<AppState>) -> Json<detect::Status> {
 /// GET /api/channels/:id/markers — how much of a channel's lineup has markers.
 pub async fn channel_coverage(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<Json<Coverage>> {
     let cfg = store::load_config(&st.db, id).await?.ok_or(ApiError::NotFound)?;
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let lists: Vec<Vec<Marker>> = items
         .iter()
         .filter(|it| !it.is_movie && (cfg.rule.matches(it) || cfg.slots.iter().any(|s| s.rule.matches(it))))
@@ -116,7 +118,7 @@ pub struct ShowRow {
 
 /// GET /api/markers/shows — every show with its marker coverage.
 pub async fn shows(State(st): State<AppState>) -> ApiResult<Json<Vec<ShowRow>>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let mut rows: HashMap<String, ShowRow> = HashMap::new();
     for it in items.iter().filter(|i| !i.is_movie) {
         let Some(title) = &it.show_title else { continue };
@@ -173,7 +175,7 @@ fn out(m: &Marker) -> MarkerOut {
 pub async fn show(State(st): State<AppState>, Query(q): Query<ShowQuery>) -> ApiResult<Json<ShowDetail>> {
     let rows: Vec<(i64, String, i64, i64, String, String, i64, Option<String>)> = sqlx::query_as(
         "SELECT id, media_key, season, episode, title, show_title, duration_ms, provider_ids FROM media_items
-         WHERE media_key LIKE ?1 || '/%' AND missing = 0 AND season IS NOT NULL AND episode IS NOT NULL
+         WHERE media_key >= ?1 || '/' AND media_key < ?1 || '0' AND missing = 0 AND season IS NOT NULL AND episode IS NOT NULL
          ORDER BY season, episode, id",
     )
     .bind(&q.key)
@@ -274,7 +276,7 @@ pub async fn delete_rule(State(st): State<AppState>, Json(r): Json<RuleDelete>) 
 /// GET /api/markers/episode/:item_id/kept — not used by the UI directly; handy
 /// for checking what an episode airs as on a skipping channel.
 pub async fn preview_cuts(State(st): State<AppState>, Path(item_id): Path<i64>) -> ApiResult<Json<Vec<(i64, i64)>>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let it = items.iter().find(|i| i.id == item_id).ok_or(ApiError::NotFound)?;
     let c = cuts::cuts_for(&it.markers, it.duration_ms, cuts::Skip { intros: true, credits: true });
     Ok(Json(cuts::kept_ranges(it.duration_ms, &c)))

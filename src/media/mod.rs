@@ -181,8 +181,61 @@ impl Source {
         }
     }
 
+    /// Resolve a server-relative path ("/library/…") against this server,
+    /// refusing anything that would leave it ("//evil/x", "http://…", "\\…").
+    /// Requests built from it carry credentials, so this must hold.
+    pub fn local_url(&self, path_and_query: &str) -> Option<Url> {
+        if !path_and_query.starts_with('/') || path_and_query.starts_with("//") || path_and_query.contains('\\') {
+            return None;
+        }
+        let base = self.base();
+        let mut origin = base.clone();
+        origin.set_path("/");
+        origin.set_query(None);
+        let u = origin.join(path_and_query).ok()?;
+        (u.scheme() == base.scheme() && u.host_str() == base.host_str() && u.port_or_known_default() == base.port_or_known_default()).then_some(u)
+    }
+
     /// Query parameters that carry credentials and must never be echoed to browsers.
     pub const SECRET_PARAMS: &'static [&'static str] = &["X-Plex-Token", "api_key", "ApiKey", "X-Emby-Token"];
+}
+
+/// Mask credential values in text that may echo a URL (ffmpeg errors, logs).
+pub fn redact(text: &str) -> String {
+    let mut out = text.to_string();
+    for key in Source::SECRET_PARAMS {
+        let needle = format!("{key}=");
+        let mut from = 0;
+        while let Some(pos) = out[from..].to_ascii_lowercase().find(&needle.to_ascii_lowercase()) {
+            let start = from + pos + needle.len();
+            let end = out[start..].find(|c: char| c == '&' || c == '"' || c == '\'' || c.is_whitespace()).map_or(out.len(), |e| start + e);
+            out.replace_range(start..end, "***");
+            from = start + 3;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_tokens() {
+        let s = "http://nas:32400/library/parts/1/file.mkv?X-Plex-Token=abc123: Server returned 404; http://jf/Videos/x/stream?static=true&api_key=ffee&MediaSourceId=x";
+        let r = redact(s);
+        assert!(!r.contains("abc123") && !r.contains("ffee"), "{r}");
+        assert!(r.contains("X-Plex-Token=***") && r.contains("&MediaSourceId=x"));
+    }
+
+    #[test]
+    fn local_url_never_leaves_the_server() {
+        let s = Source::new(reqwest::Client::new(), "plex", "http://nas:32400", "t").unwrap();
+        assert_eq!(s.local_url("/library/metadata/1/thumb/2?x=1").unwrap().as_str(), "http://nas:32400/library/metadata/1/thumb/2?x=1");
+        for bad in ["//evil.com/x", "http://evil.com/x", "library/x", "/\\evil.com/x", "\\\\evil/x", "//nas:32400@evil.com/"] {
+            assert!(s.local_url(bad).is_none(), "{bad}");
+        }
+    }
 }
 
 /// Small helpers for picking fields out of loosely-typed JSON responses.

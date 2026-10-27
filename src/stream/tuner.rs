@@ -34,7 +34,7 @@ pub async fn program_at(st: &AppState, channel_id: i64, t_ms: i64) -> anyhow::Re
         return Ok(Some(p));
     }
     let _guard = st.guide_lock.lock().await;
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     store::extend_channel(&st.db, &items, channel_id, st.cfg.tz, now_ms()).await?;
     Ok(guide::at(&st.db, channel_id, t_ms).await?)
 }
@@ -374,7 +374,7 @@ async fn run_segment(st: AppState, unit: Unit, bars: bool, tx: mpsc::Sender<Byte
     tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            tracing::warn!("ffmpeg: {line}");
+            tracing::warn!("ffmpeg: {}", crate::media::redact(&line));
         }
     });
     let mut buf = vec![0u8; TS * 256];
@@ -414,6 +414,9 @@ async fn stop_session(st: &AppState, sid: Option<&str>) {
 /// GET /iptv/stream/:channel.ts
 pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> ApiResult<Response> {
     let channel_id: i64 = file.trim_end_matches(".ts").parse().map_err(|_| ApiError::NotFound)?;
+    let Ok(slot) = st.tuner_slots.clone().try_acquire_owned() else {
+        return Ok((axum::http::StatusCode::SERVICE_UNAVAILABLE, "All tuners are busy").into_response());
+    };
     let now = now_ms();
     let first = program_at(&st, channel_id, now).await?.ok_or(ApiError::NotFound)?;
     let offset = now - first.start_ms;
@@ -421,6 +424,7 @@ pub async fn stream(State(st): State<AppState>, Path(file): Path<String>) -> Api
 
     let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(64);
     tokio::spawn(async move {
+        let _slot = slot; // released when the viewer disconnects
         let mut stitch = Stitcher::new(90_000);
         let mut next: Option<Segment> = None;
         let mut failed: Option<i64> = None;

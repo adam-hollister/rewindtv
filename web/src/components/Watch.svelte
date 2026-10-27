@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import Hls from 'hls.js';
-  import { playlistSeconds } from '../lib/hls';
+  import type Hls from 'hls.js';
+  import { loadHls, playlistSeconds } from '../lib/hls';
   import { api, type ChannelListItem, type Tune } from '../lib/api';
   import { session, go, clockState } from '../lib/state.svelte';
   import { clock, range, progress, minutesLeft } from '../lib/time';
@@ -93,6 +93,8 @@
     kept = t.kept ?? [];
     base = fullLength ? 0 : t.offset;
 
+    const Hls = await loadHls();
+    if (destroyed) return;
     if (Hls.isSupported()) {
       hls = new Hls({ startPosition: pos(), maxBufferLength: 30, backBufferLength: 60, enableWorker: true });
       hls.on(Hls.Events.ERROR, (_e, data) => {

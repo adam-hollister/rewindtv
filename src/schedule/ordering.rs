@@ -64,19 +64,48 @@ impl ChannelState {
     }
 }
 
+/// A pool of items with the lookups ordering needs, built once per pool
+/// rather than on every pick.
+pub struct PoolIndex {
+    /// Indices into the items slice.
+    pub pool: Vec<usize>,
+    by_id: HashMap<i64, usize>,
+    /// Items grouped by show (each movie alone), in airing order.
+    groups: HashMap<String, Vec<usize>>,
+}
+
+impl PoolIndex {
+    pub fn new(items: &[Item], pool: Vec<usize>) -> Self {
+        let by_id = pool.iter().map(|&ix| (items[ix].id, ix)).collect();
+        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+        for &ix in &pool {
+            groups.entry(items[ix].group_key()).or_default().push(ix);
+        }
+        for g in groups.values_mut() {
+            g.sort_by_key(|&ix| {
+                let it = &items[ix];
+                (it.season.unwrap_or(0) == 0, it.season, it.episode, it.year, it.id)
+            });
+        }
+        Self { pool, by_id, groups }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pool.is_empty()
+    }
+}
+
 pub struct Picker<'a> {
     pub ordering: Ordering,
     pub block_size: usize,
-    pub items: &'a [Item],
-    /// Indices into `items` making up this pool.
-    pub pool: &'a [usize],
+    pub index: &'a PoolIndex,
     pub avoid_repeat_ms: i64,
 }
 
 impl Picker<'_> {
     /// Returns the index (into `items`) of the next item to air.
     pub fn next<R: Rng>(&self, pool_key: &str, state: &mut ChannelState, now_ms: i64, rng: &mut R) -> Option<usize> {
-        if self.pool.is_empty() {
+        if self.index.is_empty() {
             return None;
         }
         let recent = state.recent_set(now_ms, self.avoid_repeat_ms);
@@ -89,7 +118,7 @@ impl Picker<'_> {
     }
 
     fn shuffle<R: Rng>(&self, ps: &mut PoolState, recent: &HashSet<i64>, last: Option<i64>, rng: &mut R) -> Option<usize> {
-        let by_id: HashMap<i64, usize> = self.pool.iter().map(|&ix| (self.items[ix].id, ix)).collect();
+        let by_id = &self.index.by_id;
         loop {
             while let Some(id) = ps.deck.pop() {
                 if let Some(&ix) = by_id.get(&id) {
@@ -110,16 +139,7 @@ impl Picker<'_> {
     }
 
     fn sequential<R: Rng>(&self, ps: &mut PoolState, rng: &mut R) -> Option<usize> {
-        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-        for &ix in self.pool {
-            groups.entry(self.items[ix].group_key()).or_default().push(ix);
-        }
-        for g in groups.values_mut() {
-            g.sort_by_key(|&ix| {
-                let it = &self.items[ix];
-                (it.season.unwrap_or(0) == 0, it.season, it.episode, it.year, it.id)
-            });
-        }
+        let groups = &self.index.groups;
 
         // Rebuild the rotation if the set of shows changed.
         let keys: HashSet<&String> = groups.keys().collect();
@@ -189,7 +209,8 @@ mod tests {
     fn run(ordering: Ordering, block: usize, n: usize) -> Vec<Item> {
         let items = library();
         let pool: Vec<usize> = (0..items.len()).collect();
-        let p = Picker { ordering, block_size: block, items: &items, pool: &pool, avoid_repeat_ms: 10_000 };
+        let index = PoolIndex::new(&items, pool);
+        let p = Picker { ordering, block_size: block, index: &index, avoid_repeat_ms: 10_000 };
         let mut st = ChannelState::default();
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
         (0..n)
@@ -240,7 +261,8 @@ mod tests {
         let mut items = library();
         items.push(Item { id: 99, is_movie: true, duration_ms: 1_000, ..Default::default() });
         let pool: Vec<usize> = (0..items.len()).collect();
-        let p = Picker { ordering: Ordering::Block, block_size: 3, items: &items, pool: &pool, avoid_repeat_ms: 0 };
+        let index = PoolIndex::new(&items, pool);
+        let p = Picker { ordering: Ordering::Block, block_size: 3, index: &index, avoid_repeat_ms: 0 };
         let mut st = ChannelState::default();
         let mut rng = rand::rngs::StdRng::seed_from_u64(5);
         let ids: Vec<i64> = (0..40).map(|i| items[p.next("d", &mut st, i, &mut rng).unwrap()].id).collect();
@@ -269,7 +291,8 @@ mod tests {
     fn cursor_continues_after_reload() {
         let items = library();
         let pool: Vec<usize> = (0..items.len()).collect();
-        let p = Picker { ordering: Ordering::Marathon, block_size: 0, items: &items, pool: &pool, avoid_repeat_ms: 0 };
+        let index = PoolIndex::new(&items, pool);
+        let p = Picker { ordering: Ordering::Marathon, block_size: 0, index: &index, avoid_repeat_ms: 0 };
         let mut st = ChannelState::default();
         let mut rng = rand::rngs::StdRng::seed_from_u64(1);
         let a = p.next("d", &mut st, 0, &mut rng).unwrap();

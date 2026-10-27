@@ -72,7 +72,7 @@ pub async fn tune(State(st): State<AppState>, Path(id): Path<i64>, body: Option<
         None => {
             {
                 let _guard = st.guide_lock.lock().await;
-                let items = store::load_items(&st.db).await?;
+                let items = st.items().await?;
                 store::extend_channel(&st.db, &items, id, st.cfg.tz, now).await?;
             }
             guide::at(&st.db, id, now).await?.ok_or(ApiError::NotFound)?
@@ -135,16 +135,14 @@ pub struct ImgQuery {
 
 /// Artwork proxy so media-server tokens stay server-side.
 pub async fn image(State(st): State<AppState>, Path(source): Path<i64>, Query(q): Query<ImgQuery>) -> ApiResult<Response> {
-    if !q.p.starts_with('/') {
-        return Err(ApiError::BadRequest("bad image path".into()));
-    }
     let src = st.source(source).await?;
+    // Only paths on the media server itself (requests carry its credentials).
+    let original = src.local_url(&q.p).ok_or_else(|| ApiError::BadRequest("bad image path".into()))?;
     let resized = src.image_url(&q.p, q.w.unwrap_or(400).clamp(64, 1920));
-    let mut res = st.http.get(resized).headers(src.auth_headers()).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
+    let mut res = st.http.get(resized).headers(src.auth_headers()).timeout(std::time::Duration::from_secs(30)).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
     if !res.status().is_success() {
         // Fall back to the original image if the server's resizer fails.
-        let original = src.base().join(&q.p).map_err(|e| ApiError::BadRequest(e.to_string()))?;
-        res = st.http.get(original).headers(src.auth_headers()).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
+        res = st.http.get(original).headers(src.auth_headers()).timeout(std::time::Duration::from_secs(30)).send().await.map_err(|e| ApiError::BadGateway(e.to_string()))?;
         if !res.status().is_success() {
             return Ok(StatusCode::NOT_FOUND.into_response());
         }

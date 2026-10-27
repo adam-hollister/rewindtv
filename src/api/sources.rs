@@ -105,6 +105,7 @@ pub async fn create(State(st): State<AppState>, Json(s): Json<SourceInput>) -> A
         .fetch_one(&st.db)
         .await?;
     sync::refresh_libraries(&st.db, id, &src).await?;
+    st.invalidate_items().await;
     Ok(Json(serde_json::json!({ "id": id, "name": name })))
 }
 
@@ -120,11 +121,13 @@ pub async fn update(State(st): State<AppState>, Path(id): Path<i64>, Json(s): Js
     .bind(id)
     .execute(&st.db)
     .await?;
+    st.invalidate_items().await;
     Ok(Json(()))
 }
 
 pub async fn remove(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<Json<()>> {
     sqlx::query("DELETE FROM sources WHERE id = ?").bind(id).execute(&st.db).await?;
+    st.invalidate_items().await;
     Ok(Json(()))
 }
 
@@ -135,6 +138,7 @@ pub struct LibraryInput {
 
 pub async fn set_library(State(st): State<AppState>, Path(id): Path<i64>, Json(l): Json<LibraryInput>) -> ApiResult<Json<()>> {
     sqlx::query("UPDATE libraries SET enabled = ? WHERE id = ?").bind(l.enabled).bind(id).execute(&st.db).await?;
+    st.invalidate_items().await;
     Ok(Json(()))
 }
 

@@ -28,24 +28,23 @@ struct ItemRow {
     duration_ms: i64,
     content_rating: Option<String>,
     studio: Option<String>,
-    genres: Option<String>,
-    collections: Option<String>,
     media_key: Option<String>,
     provider_ids: Option<String>,
 }
 
-fn split(s: Option<String>) -> Vec<String> {
-    s.map(|s| s.split('\u{1f}').filter(|x| !x.is_empty()).map(str::to_string).collect()).unwrap_or_default()
+async fn tags(db: &SqlitePool, sql: &str) -> sqlx::Result<std::collections::HashMap<i64, Vec<String>>> {
+    let mut map: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+    for (id, tag) in sqlx::query_as::<_, (i64, String)>(sql).fetch_all(db).await? {
+        map.entry(id).or_default().push(tag);
+    }
+    Ok(map)
 }
 
 /// Every playable item from enabled sources and libraries.
 pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
     let rows: Vec<ItemRow> = sqlx::query_as(
         "SELECT m.id, m.library_id, m.kind, m.title, m.show_key, m.show_title, m.season, m.episode,
-                m.year, m.duration_ms, m.content_rating, m.studio,
-                (SELECT group_concat(genre, char(31)) FROM item_genres g WHERE g.item_id = m.id) AS genres,
-                (SELECT group_concat(collection, char(31)) FROM item_collections c WHERE c.item_id = m.id) AS collections,
-                m.media_key, m.provider_ids
+                m.year, m.duration_ms, m.content_rating, m.studio, m.media_key, m.provider_ids
          FROM media_items m
          JOIN libraries l ON l.id = m.library_id
          JOIN sources s ON s.id = m.source_id
@@ -54,6 +53,9 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
     )
     .fetch_all(db)
     .await?;
+    // Tags in two flat scans instead of a subquery per item.
+    let mut genres = tags(db, "SELECT item_id, genre FROM item_genres").await?;
+    let mut collections = tags(db, "SELECT item_id, collection FROM item_collections").await?;
     let refs: Vec<crate::markers::ItemRef> = rows
         .iter()
         .map(|r| crate::markers::ItemRef {
@@ -81,8 +83,8 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
             duration_ms: r.duration_ms,
             content_rating: r.content_rating,
             studio: r.studio,
-            genres: split(r.genres),
-            collections: split(r.collections),
+            genres: genres.remove(&r.id).unwrap_or_default(),
+            collections: collections.remove(&r.id).unwrap_or_default(),
         })
         .collect())
 }
@@ -187,11 +189,10 @@ pub async fn rebuild_channel(db: &SqlitePool, items: &[Item], channel_id: i64, t
 }
 
 /// Extend every channel and prune old history.
-pub async fn extend_all(db: &SqlitePool, tz: Tz, now: i64) -> anyhow::Result<()> {
-    let items = load_items(db).await?;
+pub async fn extend_all(db: &SqlitePool, items: &[Item], tz: Tz, now: i64) -> anyhow::Result<()> {
     let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM channels").fetch_all(db).await?;
     for id in ids {
-        if let Err(e) = extend_channel(db, &items, id, tz, now).await {
+        if let Err(e) = extend_channel(db, items, id, tz, now).await {
             tracing::warn!("extending channel {id}: {e:#}");
         }
     }
@@ -201,24 +202,19 @@ pub async fn extend_all(db: &SqlitePool, tz: Tz, now: i64) -> anyhow::Result<()>
 
 /// Regenerate programs starting after `keep_until` on channels that skip
 /// intros or credits (after their markers changed).
-pub async fn refresh_skipping(db: &SqlitePool, tz: Tz, keep_until: i64) -> anyhow::Result<()> {
+pub async fn refresh_skipping(db: &SqlitePool, items: &[Item], tz: Tz, keep_until: i64) -> anyhow::Result<()> {
     let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE skip_intros = 1 OR skip_credits = 1").fetch_all(db).await?;
-    if ids.is_empty() {
-        return Ok(());
-    }
-    let items = load_items(db).await?;
     for id in ids {
         sqlx::query("DELETE FROM programs WHERE channel_id = ? AND start_ms > ?").bind(id).bind(keep_until).execute(db).await?;
-        extend_channel(db, &items, id, tz, crate::db::now_ms()).await?;
+        extend_channel(db, items, id, tz, crate::db::now_ms()).await?;
     }
     Ok(())
 }
 
-pub async fn rebuild_all(db: &SqlitePool, tz: Tz, now: i64) -> anyhow::Result<()> {
-    let items = load_items(db).await?;
+pub async fn rebuild_all(db: &SqlitePool, items: &[Item], tz: Tz, now: i64) -> anyhow::Result<()> {
     let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM channels").fetch_all(db).await?;
     for id in ids {
-        rebuild_channel(db, &items, id, tz, now).await?;
+        rebuild_channel(db, items, id, tz, now).await?;
     }
     Ok(())
 }

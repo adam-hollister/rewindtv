@@ -16,6 +16,7 @@ services:
       # REWINDTV_IPTV_VIDEO: server
       # REWINDTV_MARKERS_DIR: /markers
       # REWINDTV_PATH_MAP: /data/media=/media
+    # Runs as uid/gid 568; make sure ./data is writable by it (chown 568:568 data).
     volumes:
       - ./data:/data
       # - ./markers:/markers

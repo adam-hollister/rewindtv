@@ -1,4 +1,11 @@
-import Hls from 'hls.js';
+import type HlsType from 'hls.js';
+
+// hls.js is large; load it only when something actually plays.
+let hlsModule: Promise<typeof HlsType> | null = null;
+export function loadHls(): Promise<typeof HlsType> {
+  hlsModule ??= import('hls.js').then((m) => m.default);
+  return hlsModule;
+}
 
 /** Total length of the first variant playlist, to see whether the server
  *  started at the requested offset or returned the whole program. */
@@ -27,6 +34,7 @@ export async function playFrom(video: HTMLVideoElement, url: string, at: number,
   const fullLength = total > 0 && Math.abs(total - duration) < Math.abs(total - (duration - at));
   const base = fullLength ? 0 : at;
   const start = fullLength ? at : 0;
+  const Hls = await loadHls();
   if (Hls.isSupported()) {
     const hls = new Hls({ startPosition: start, maxBufferLength: 30 });
     hls.loadSource(url);

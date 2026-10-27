@@ -1,3 +1,6 @@
+// sqlx row tuples are clearer inline than as one-off type aliases.
+#![allow(clippy::type_complexity)]
+
 mod api;
 mod config;
 mod db;
@@ -6,6 +9,7 @@ mod guide;
 mod markers;
 mod media;
 mod schedule;
+mod security;
 mod state;
 mod stream;
 mod sync;
@@ -14,6 +18,8 @@ mod web;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
+use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -43,6 +49,9 @@ async fn main() -> anyhow::Result<()> {
         sync_status: Default::default(),
         detect_status: Default::default(),
         guide_lock: Default::default(),
+        // Plex honours the advertised tuner count; leave headroom for other apps.
+        items: Default::default(),
+        tuner_slots: Arc::new(tokio::sync::Semaphore::new(cfg.tuners as usize + 2)),
     };
 
     if let Err(e) = markers::files::restore_sources(&state.db, &state.cfg.markers_dir).await {
@@ -57,6 +66,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = api::router()
         .fallback(web::static_handler)
+        .layer(axum::middleware::from_fn_with_state(state.clone(), security::guard))
+        // Gzip JSON, XMLTV and M3U; never live video, which must stream unbuffered.
+        .layer(CompressionLayer::new().compress_when(DefaultPredicate::new().and(NotForContentType::const_new("video/"))))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], cfg.port));
@@ -85,7 +97,14 @@ fn spawn_background(state: AppState) {
         loop {
             tick.tick().await;
             let _guard = st.guide_lock.lock().await;
-            if let Err(e) = schedule::store::extend_all(&st.db, st.cfg.tz, db::now_ms()).await {
+            let items = match st.items().await {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::warn!("loading library: {e:#}");
+                    continue;
+                }
+            };
+            if let Err(e) = schedule::store::extend_all(&st.db, &items, st.cfg.tz, db::now_ms()).await {
                 tracing::warn!("guide refresh: {e:#}");
             }
         }

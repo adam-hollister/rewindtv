@@ -266,7 +266,7 @@ async fn insert_channel(st: &AppState, c: &ChannelIo) -> ApiResult<i64> {
 
 async fn build(st: &AppState, ids: &[i64], rebuild: bool) -> ApiResult<()> {
     let _guard = st.guide_lock.lock().await;
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     for &id in ids {
         if rebuild {
             store::rebuild_channel(&st.db, &items, id, st.cfg.tz, now_ms()).await?;
@@ -328,7 +328,8 @@ pub async fn rebuild(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResu
 
 pub async fn rebuild_all(State(st): State<AppState>) -> ApiResult<Json<()>> {
     let _guard = st.guide_lock.lock().await;
-    store::rebuild_all(&st.db, st.cfg.tz, now_ms()).await?;
+    let items = st.items().await?;
+    store::rebuild_all(&st.db, &items, st.cfg.tz, now_ms()).await?;
     Ok(Json(()))
 }
 
@@ -346,7 +347,7 @@ pub struct PreviewProgram {
 
 /// The next 24 hours of a channel that hasn't been saved yet.
 pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> ApiResult<Json<Vec<PreviewProgram>>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let slots: Vec<Slot> = c
         .slots
         .iter()

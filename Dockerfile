@@ -25,6 +25,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata tini \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=server /src/target/release/rewindtv /usr/local/bin/rewindtv
+# Run unprivileged as uid/gid 568, TrueNAS's standard "apps" user.
+RUN groupadd --system --gid 568 rewindtv \
+ && useradd --system --uid 568 --gid 568 --home-dir /data --shell /usr/sbin/nologin rewindtv \
+ && mkdir -p /data /markers && chown 568:568 /data /markers
+USER 568:568
 ENV REWINDTV_DATA=/data \
     REWINDTV_PORT=8420 \
     TZ=UTC

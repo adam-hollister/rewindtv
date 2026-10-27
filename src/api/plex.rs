@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::Json;
 use reqwest::header::ACCEPT;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ async fn plex_tv(st: &AppState, req: reqwest::RequestBuilder) -> ApiResult<Value
     if !res.status().is_success() {
         return Err(ApiError::BadGateway(format!("plex.tv answered {}", res.status())));
     }
-    Ok(res.json().await.map_err(|e| ApiError::BadGateway(e.to_string()))?)
+    res.json().await.map_err(|e| ApiError::BadGateway(e.to_string()))
 }
 
 #[derive(Serialize)]
@@ -139,8 +139,9 @@ pub struct TokenQuery {
     token: String,
 }
 
-/// GET /api/plex/servers?token=… — your Plex servers, each address tested from here.
-pub async fn servers(State(st): State<AppState>, Query(q): Query<TokenQuery>) -> ApiResult<Json<Vec<Server>>> {
+/// POST /api/plex/servers {token} — your Plex servers, each address tested
+/// from here. (POST so the token never lands in URLs or access logs.)
+pub async fn servers(State(st): State<AppState>, Json(q): Json<TokenQuery>) -> ApiResult<Json<Vec<Server>>> {
     let v = plex_tv(
         &st,
         st.http

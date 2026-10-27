@@ -10,6 +10,7 @@ use super::{Library, RemoteItem, ServerMarker};
 use crate::schedule::cuts::Kind;
 
 const PAGE: usize = 500;
+const METADATA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 const CLIENT_ID: &str = "rewindtv";
 
 #[derive(Clone)]
@@ -45,6 +46,7 @@ impl Plex {
             .headers(self.auth_headers())
             .header(ACCEPT, "application/json")
             .query(query)
+            .timeout(METADATA_TIMEOUT)
             .send()
             .await
             .with_context(|| format!("GET {path}"))?
@@ -179,7 +181,7 @@ impl Plex {
     /// Intro/credits markers (Plex Pass detection) for one item.
     pub async fn markers(&self, item_key: &str) -> anyhow::Result<Vec<ServerMarker>> {
         let mc = self.get(&format!("/library/metadata/{item_key}"), &[("includeMarkers", "1".into())]).await?;
-        Ok(arr(&mc, "Metadata").first().map(parse_markers).flatten().unwrap_or_default())
+        Ok(arr(&mc, "Metadata").first().and_then(parse_markers).unwrap_or_default())
     }
 
     /// Newer Plex servers want a transcode decision before `start.m3u8`.
@@ -306,7 +308,6 @@ fn episode(v: &Value, show: Option<&Value>) -> Option<RemoteItem> {
         art: s(v, "grandparentArt").or_else(|| s(v, "art")),
         genres: tags(&show_val, "Genre"),
         collections: tags(&show_val, "Collection"),
-        ..Default::default()
     })
 }
 

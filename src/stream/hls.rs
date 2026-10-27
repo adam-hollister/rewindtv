@@ -90,16 +90,12 @@ pub async fn proxy(
     let base = session.source.base().clone();
     let upstream = match (rest.as_str(), q.u) {
         ("master.m3u8", _) => session.master.clone(),
-        ("p", Some(u)) if u.starts_with('/') => {
-            let mut origin = base.clone();
-            origin.set_path("/");
-            origin.set_query(None);
-            origin.join(&u).map_err(|e| ApiError::BadRequest(e.to_string()))?
-        }
+        ("p", Some(u)) => session.source.local_url(&u).ok_or_else(|| ApiError::BadRequest("bad stream path".into()))?,
         _ => return Err(ApiError::NotFound),
     };
 
-    let mut req = st.http.get(upstream.clone()).headers(session.source.session_headers(&sid));
+    // Generous: a transcoder may take a while to produce a segment.
+    let mut req = st.http.get(upstream.clone()).headers(session.source.session_headers(&sid)).timeout(std::time::Duration::from_secs(90));
     if let Some(range) = req_headers.get(header::RANGE) {
         req = req.header(header::RANGE, range);
     }

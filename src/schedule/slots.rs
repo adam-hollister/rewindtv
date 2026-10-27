@@ -37,7 +37,7 @@ impl Slot {
 }
 
 /// Which slot (if any) is on air at `t_ms`. Earlier-starting slots win overlaps.
-pub fn slot_at<'a>(slots: &'a [Slot], tz: Tz, t_ms: i64) -> Option<&'a Slot> {
+pub fn slot_at(slots: &[Slot], tz: Tz, t_ms: i64) -> Option<&Slot> {
     let local = tz.timestamp_millis_opt(t_ms).single()?;
     let wd = local.weekday().num_days_from_monday();
     let minute = local.hour() * 60 + local.minute();

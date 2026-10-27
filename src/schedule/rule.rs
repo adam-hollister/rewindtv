@@ -88,8 +88,16 @@ impl Rule {
 
     /// True when the rule is just a hand-picked list of items.
     fn is_only_items(&self) -> bool {
-        let Rule { include_items: _, exclude_items: _, .. } = self;
-        *self == Rule { include_items: self.include_items.clone(), exclude_items: self.exclude_items.clone(), ..Default::default() }
+        self.libraries.is_empty()
+            && self.kinds.is_empty()
+            && self.genres.is_empty()
+            && self.exclude_genres.is_empty()
+            && self.collections.is_empty()
+            && self.shows.is_empty()
+            && self.studios.is_empty()
+            && self.ratings.is_empty()
+            && self.year_min.is_none()
+            && self.year_max.is_none()
     }
 }
 

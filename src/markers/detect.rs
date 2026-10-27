@@ -73,7 +73,7 @@ pub fn longest_shared(a: &[u32], b: &[u32]) -> Option<Run> {
             shifts.push((shift, score));
         }
     }
-    shifts.sort_by(|x, y| y.1.cmp(&x.1));
+    shifts.sort_by_key(|s| std::cmp::Reverse(s.1));
     shifts.truncate(16);
 
     let window = (WINDOW_MS / POINT_MS) as usize;
@@ -199,7 +199,7 @@ async fn fingerprint(ffmpeg: &str, input: &str, start_ms: i64, len_ms: i64) -> a
     )
     .await??;
     if !out.status.success() {
-        anyhow::bail!("{}", String::from_utf8_lossy(&out.stderr).trim().chars().take(200).collect::<String>());
+        anyhow::bail!("{}", crate::media::redact(String::from_utf8_lossy(&out.stderr).trim()).chars().take(200).collect::<String>());
     }
     Ok(out.stdout.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
 }
@@ -291,7 +291,7 @@ pub struct Status {
 /// episodes that still lack a manual or server marker. `only_channel` limits
 /// the scan to one channel.
 async fn seasons_to_scan(st: &AppState, only_channel: Option<i64>) -> anyhow::Result<Vec<Vec<Ep>>> {
-    let items = crate::schedule::store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let channels: Vec<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE (skip_intros = 1 OR skip_credits = 1) AND (?1 IS NULL OR id = ?1)")
         .bind(only_channel)
         .fetch_all(&st.db)
@@ -390,20 +390,24 @@ pub async fn run(st: AppState, only_channel: Option<i64>) {
             if let Some(&(s, e, c)) = credits.get(&ep.id) {
                 rows.push((Kind::Credits, s, e, Some(c)));
             }
-            if !rows.is_empty() {
-                if super::save(&st.db, &ep.media_key, MarkerSource::Detected, ep.duration_ms, &rows).await.is_ok() {
+            if !rows.is_empty()
+                && super::save(&st.db, &ep.media_key, MarkerSource::Detected, ep.duration_ms, &rows).await.is_ok() {
                     found += 1;
                     touched.insert(ep.media_key.clone());
                 }
-            }
             let _ = sqlx::query("UPDATE media_items SET detect_checked_at = ? WHERE id = ?").bind(now_ms()).bind(ep.id).execute(&st.db).await;
         }
         st.detect_status.write().await.found = found;
     }
     crate::sync::export_touched(&st, touched).await;
     if found > 0 {
+        st.invalidate_items().await;
         let _guard = st.guide_lock.lock().await;
-        if let Err(e) = crate::schedule::store::refresh_skipping(&st.db, st.cfg.tz, now_ms() + 6 * 3_600_000).await {
+        let refreshed = match st.items().await {
+            Ok(items) => crate::schedule::store::refresh_skipping(&st.db, &items, st.cfg.tz, now_ms() + 6 * 3_600_000).await,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = refreshed {
             tracing::warn!("refreshing skipping channels: {e:#}");
         }
     }

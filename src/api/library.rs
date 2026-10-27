@@ -7,7 +7,6 @@ use serde::Serialize;
 use crate::error::ApiResult;
 use crate::schedule::autogen::{self, Suggestion};
 use crate::schedule::rule::Rule;
-use crate::schedule::store;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -50,10 +49,10 @@ fn counts(map: HashMap<String, usize>) -> Vec<Count> {
 
 /// Everything the channel editor needs to offer as filter chips.
 pub async fn facets(State(st): State<AppState>) -> ApiResult<Json<Facets>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let (mut genres, mut collections, mut studios, mut ratings) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
     let mut shows: BTreeMap<String, (String, usize)> = BTreeMap::new();
-    for it in &items {
+    for it in items.iter() {
         for g in &it.genres {
             *genres.entry(g.clone()).or_insert(0) += 1;
         }
@@ -103,7 +102,7 @@ pub struct Preview {
 
 /// Live "matches N items / H hours" counter for the editor.
 pub async fn preview(State(st): State<AppState>, Json(rule): Json<Rule>) -> ApiResult<Json<Preview>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     let matched: Vec<_> = items.iter().filter(|i| rule.matches(i)).collect();
     let mut shows: Vec<&str> = matched.iter().filter(|i| !i.is_movie).filter_map(|i| i.show_title.as_deref()).collect();
     shows.sort_unstable();
@@ -122,6 +121,6 @@ pub async fn preview(State(st): State<AppState>, Json(rule): Json<Rule>) -> ApiR
 }
 
 pub async fn suggestions(State(st): State<AppState>) -> ApiResult<Json<Vec<Suggestion>>> {
-    let items = store::load_items(&st.db).await?;
+    let items = st.items().await?;
     Ok(Json(autogen::suggest(&items)))
 }

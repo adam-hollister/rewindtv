@@ -245,16 +245,25 @@ pub async fn sync_all(state: &AppState) {
             .await;
         summary.push(msg);
     }
+    // The library (and maybe markers) changed: reload it once for everyone.
+    state.invalidate_items().await;
+    let items = match state.items().await {
+        Ok(i) => i,
+        Err(e) => {
+            tracing::warn!("loading library: {e:#}");
+            Default::default()
+        }
+    };
     {
         let _guard = state.guide_lock.lock().await;
         if marker_changes > 0 {
             // New markers change program lengths; refresh skipping channels
             // beyond the next few hours so what's coming up soon stays put.
-            if let Err(e) = store::refresh_skipping(&state.db, state.cfg.tz, now_ms() + 6 * 3_600_000).await {
+            if let Err(e) = store::refresh_skipping(&state.db, &items, state.cfg.tz, now_ms() + 6 * 3_600_000).await {
                 tracing::warn!("refreshing skipping channels: {e:#}");
             }
         }
-        if let Err(e) = store::extend_all(&state.db, state.cfg.tz, now_ms()).await {
+        if let Err(e) = store::extend_all(&state.db, &items, state.cfg.tz, now_ms()).await {
             tracing::warn!("extending guides: {e:#}");
         }
     }

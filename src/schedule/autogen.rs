@@ -86,7 +86,7 @@ pub fn suggest(items: &[Item]) -> Vec<Suggestion> {
         push("studio", s.clone(), Rule { studios: vec![s.clone()], ..Default::default() }, Ordering::Episodic, t);
     }
     let mut show_list: Vec<_> = shows.into_iter().collect();
-    show_list.sort_by(|a, b| b.1 .1.ms.cmp(&a.1 .1.ms));
+    show_list.sort_by_key(|s| std::cmp::Reverse(s.1 .1.ms));
     for (key, (title, t)) in show_list {
         let rule = Rule { shows: vec![key], ..Default::default() };
         push("show", format!("{title} 24/7"), rule, Ordering::Marathon, &t);

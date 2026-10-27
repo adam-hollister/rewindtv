@@ -97,7 +97,7 @@ async fn ffprobe(st: &AppState, input: ProbeInput<'_>) -> Result<Probe, String> 
         .map_err(|_| "ffprobe timed out".to_string())?
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect());
+        return Err(crate::media::redact(String::from_utf8_lossy(&out.stderr).trim()).chars().take(300).collect());
     }
     let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
     Ok(parse_probe(&v))

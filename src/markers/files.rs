@@ -59,7 +59,7 @@ fn path_for(dir: &Path, key: &str, title: &str) -> PathBuf {
 /// A human title for a file key, from whatever the servers call it.
 async fn title_for(db: &SqlitePool, key: &str) -> String {
     let row: Option<(String, Option<String>, Option<i64>)> = sqlx::query_as(
-        "SELECT title, show_title, year FROM media_items WHERE media_key = ?1 OR media_key LIKE ?1 || '/%' LIMIT 1",
+        "SELECT title, show_title, year FROM media_items WHERE media_key = ?1 OR (media_key >= ?1 || '/' AND media_key < ?1 || '0') LIMIT 1",
     )
     .bind(key)
     .fetch_optional(db)
@@ -80,13 +80,13 @@ pub async fn export(db: &SqlitePool, dir: &Path, media_key: &str) -> anyhow::Res
     let (key, _) = file_key(media_key);
     let rows: Vec<(String, String, String, i64, i64, i64, Option<f64>, i64)> = sqlx::query_as(
         "SELECT media_key, kind, source, start_ms, end_ms, duration_ms, confidence, updated_at FROM markers
-         WHERE media_key = ?1 OR media_key LIKE ?1 || '/%' ORDER BY media_key, kind, source",
+         WHERE media_key = ?1 OR (media_key >= ?1 || '/' AND media_key < ?1 || '0') ORDER BY media_key, kind, source",
     )
     .bind(&key)
     .fetch_all(db)
     .await?;
     let ids: Vec<(String, String)> = sqlx::query_as(
-        "SELECT provider_id, media_key FROM marker_ids WHERE media_key = ?1 OR media_key LIKE ?1 || '/%' ORDER BY provider_id",
+        "SELECT provider_id, media_key FROM marker_ids WHERE media_key = ?1 OR (media_key >= ?1 || '/' AND media_key < ?1 || '0') ORDER BY provider_id",
     )
     .bind(&key)
     .fetch_all(db)

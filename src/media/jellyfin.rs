@@ -54,6 +54,7 @@ impl Jellyfin {
             .get(self.url(path))
             .headers(self.auth_headers())
             .query(query)
+            .timeout(std::time::Duration::from_secs(120))
             .send()
             .await
             .with_context(|| format!("GET {path}"))?

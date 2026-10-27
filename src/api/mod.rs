@@ -25,7 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/sources/{id}/diagnose", post(diagnose::diagnose))
         .route("/api/plex/pin", post(plex::create_pin))
         .route("/api/plex/pin/{id}", get(plex::check_pin))
-        .route("/api/plex/servers", get(plex::servers))
+        .route("/api/plex/servers", post(plex::servers))
         .route("/api/libraries/{id}", patch(sources::set_library))
         .route("/api/sync", get(sources::sync_status).post(sources::sync_now))
         .route("/api/library/facets", get(library::facets))

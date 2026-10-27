@@ -9,12 +9,13 @@ pub mod slots;
 pub mod store;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use chrono::{Offset, TimeZone};
 use chrono_tz::Tz;
 use rand::Rng;
 
-use ordering::{ChannelState, Ordering, Picker};
+use ordering::{ChannelState, Ordering, Picker, PoolIndex};
 use rule::{Item, Rule};
 use slots::Slot;
 
@@ -85,13 +86,13 @@ pub fn generate<R: Rng>(
     until_ms: i64,
     rng: &mut R,
 ) -> Vec<Program> {
-    let mut pools: HashMap<Option<i64>, Vec<usize>> = HashMap::new();
-    let mut pool_for = |slot: Option<&Slot>| -> Vec<usize> {
+    let mut pools: HashMap<Option<i64>, Rc<PoolIndex>> = HashMap::new();
+    let mut pool_for = |slot: Option<&Slot>| -> Rc<PoolIndex> {
         let key = slot.map(|s| s.id);
         let rule = slot.map(|s| &s.rule).unwrap_or(&cfg.rule);
         pools
             .entry(key)
-            .or_insert_with(|| (0..items.len()).filter(|&ix| rule.matches(&items[ix])).collect())
+            .or_insert_with(|| Rc::new(PoolIndex::new(items, (0..items.len()).filter(|&ix| rule.matches(&items[ix])).collect())))
             .clone()
     };
     let avoid_ms = cfg.avoid_repeat_hours.max(0) * 60 * MINUTE;
@@ -121,8 +122,7 @@ pub fn generate<R: Rng>(
         let picker = Picker {
             ordering: slot.map(|s| s.ordering).unwrap_or(cfg.ordering),
             block_size: cfg.block_size,
-            items,
-            pool: &pool,
+            index: &pool,
             avoid_repeat_ms: avoid_ms,
         };
         let pool_key = slot_id.map(|id| format!("slot:{id}")).unwrap_or_else(|| "default".into());
@@ -144,7 +144,7 @@ pub fn generate<R: Rng>(
                     None => state.pools.remove(&pool_key),
                 };
                 let recent: Vec<i64> = state.recent.iter().map(|(id, _)| *id).collect();
-                let fits: Vec<usize> = pool.iter().copied().filter(|&i| air_len(i) <= b - t).collect();
+                let fits: Vec<usize> = pool.pool.iter().copied().filter(|&i| air_len(i) <= b - t).collect();
                 let fresh: Vec<usize> = fits.iter().copied().filter(|i| !recent.contains(&items[*i].id)).collect();
                 let choices = if fresh.is_empty() { &fits } else { &fresh };
                 if choices.is_empty() {
