@@ -22,6 +22,11 @@ pub fn base_url(st: &AppState, headers: &HeaderMap) -> String {
     format!("http://{host}")
 }
 
+/// "?v=…" so Plex and IPTV apps fetch a changed logo again.
+fn logo_version(logo: Option<&str>) -> String {
+    logo.map(|l| format!("?v={}", url::form_urlencoded::byte_serialize(l.as_bytes()).collect::<String>())).unwrap_or_default()
+}
+
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -38,10 +43,11 @@ pub async fn playlist(State(st): State<AppState>, Path(user): Path<i64>, headers
     for c in channels {
         let _ = writeln!(
             out,
-            "#EXTINF:-1 tvg-id=\"rewindtv.{id}\" tvg-chno=\"{num}\" channel-number=\"{num}\" tvg-name=\"{name}\" tvg-logo=\"{base}/api/channels/{id}/logo.svg\" group-title=\"RewindTV\",{name}\n{base}/iptv/stream/{id}.ts",
+            "#EXTINF:-1 tvg-id=\"rewindtv.{id}\" tvg-chno=\"{num}\" channel-number=\"{num}\" tvg-name=\"{name}\" tvg-logo=\"{base}/api/channels/{id}/logo{v}\" group-title=\"RewindTV\",{name}\n{base}/iptv/stream/{id}.ts",
             id = c.id,
             num = c.number,
             name = m3u_attr(&c.name),
+            v = logo_version(c.logo.as_deref()),
         );
     }
     Ok(([(header::CONTENT_TYPE, "audio/x-mpegurl; charset=utf-8")], out).into_response())
@@ -76,10 +82,11 @@ pub async fn xmltv(
     for c in &channels {
         let _ = writeln!(
             out,
-            "  <channel id=\"rewindtv.{id}\">\n    <display-name>{name}</display-name>\n    <display-name>{num}</display-name>\n    <display-name>{num} {name}</display-name>\n    <lcn>{num}</lcn>\n    <icon src=\"{base}/api/channels/{id}/logo.svg\"/>\n  </channel>",
+            "  <channel id=\"rewindtv.{id}\">\n    <display-name>{name}</display-name>\n    <display-name>{num}</display-name>\n    <display-name>{num} {name}</display-name>\n    <lcn>{num}</lcn>\n    <icon src=\"{base}/api/channels/{id}/logo{v}\"/>\n  </channel>",
             id = c.id,
             num = c.number,
             name = xml_escape(&c.name),
+            v = logo_version(c.logo.as_deref()),
         );
     }
     for p in &programs {

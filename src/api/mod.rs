@@ -1,21 +1,42 @@
+mod backup;
 mod channels;
 mod diagnose;
 mod library;
+mod logos;
 mod markers;
 mod media;
 mod plex;
 mod sources;
 mod users;
 
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, patch, post, put};
 use axum::Router;
 
 use crate::state::AppState;
+
+/// For backups: is this a logo file name RewindTV would write?
+pub fn logo_name_ok(name: &str) -> bool {
+    logos::safe_name(name)
+}
+
+/// For backups: is this an accepted logo image?
+pub fn logo_type_ok(bytes: &[u8]) -> bool {
+    logos::sniff(bytes).is_some()
+}
 use crate::stream::{hls, iptv, tuner};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/status", get(media::status))
+        .route("/api/backup", get(backup::export))
+        .route(
+            "/api/backup/restore",
+            post(backup::restore_upload).layer(DefaultBodyLimit::max(backup::MAX_BACKUP_BYTES)),
+        )
+        .route("/api/backups", get(backup::list))
+        .route("/api/backups/{name}", get(backup::get_named))
+        .route("/api/backups/{name}/restore", post(backup::restore_named))
         .route("/api/users", get(users::list).post(users::create))
         .route("/api/users/{id}", patch(users::update).delete(users::remove))
         .route("/api/users/{uid}/channels/{cid}", put(users::set_channel_prefs))
@@ -45,7 +66,16 @@ pub fn router() -> Router<AppState> {
         .route("/api/markers/episode/{id}/kept", get(markers::preview_cuts))
         .route("/api/items/{id}/play", post(markers::play_item))
         .route("/api/markers/rule", put(markers::save_rule).delete(markers::delete_rule))
-        .route("/api/channels/{id}/logo.svg", get(media::logo))
+        .route("/api/channels/{id}/logo.svg", get(logos::serve))
+        .route(
+            "/api/channels/{id}/logo",
+            get(logos::serve)
+                .put(logos::upload)
+                .delete(logos::clear)
+                .layer(DefaultBodyLimit::max(logos::MAX_LOGO_BYTES + 64 * 1024)),
+        )
+        .route("/api/channels/{id}/logo/from-art", post(logos::from_art))
+        .route("/api/channels/{id}/art-choices", get(logos::art_choices))
         .route("/api/channels/{id}/tune", post(media::tune))
         .route("/api/sessions/{sid}", axum::routing::delete(media::stop_session))
         .route("/api/guide", get(channels::guide))

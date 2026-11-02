@@ -38,6 +38,8 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
 - **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
 - **Skip intros and credits per channel.** Uses Plex's markers, markers you set (per season or episode), and RewindTV's own audio-based detection. Markers are saved per show in their own folder and apply on every server.
+- **Channel logos.** Upload one or pick artwork from the channel's shows; it shows in RewindTV and in Plex's Live TV guide.
+- **Backup & restore.** One file with everything you set up, plus automatic nightly backups; restoring onto a fresh install brings it all back.
 - **Sign in with Plex and a built-in check.** Sign in with Plex instead of hunting for a token. A one-click check tests every playback path on your real server.
 - **Light on your NAS.** Browser playback uses your media server's own transcoder, including hardware acceleration if you have it. RewindTV proxies the stream, so server tokens never reach the browser. Abandoned streams are stopped automatically when someone channel-surfs.
 
@@ -45,7 +47,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 
 These steps are for TrueNAS SCALE 24.10 "Electric Eel" or newer.
 
-1. **Create one dataset** with the **Apps** permission preset, e.g. `important/synced/rewindtv`. RewindTV runs as the `apps` user (uid 568) and creates what it needs inside it: `data/` (the database) and `markers/` (intro/credits markers, one JSON file per show).
+1. **Create one dataset** with the **Apps** permission preset, e.g. `important/synced/rewindtv`. RewindTV runs as the `apps` user (uid 568) and creates what it needs inside it: `data/` (the database), `markers/` (intro/credits markers, one JSON file per show), `logos/` (channel logos) and `backups/` (nightly backups).
 2. Go to **Apps → Discover Apps → ⋮ (top right) → Install via YAML**.
 3. Paste [`truenas/rewindtv.yaml`](truenas/rewindtv.yaml). It's set up for `/mnt/important/synced/rewindtv` and Central time (`America/Chicago`); change those two lines if yours differ.
 4. Open `http://<truenas-ip>:8420`, create a profile, then go to **Settings → Add server**.
@@ -161,6 +163,21 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 | `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
 | `REWINDTV_SYNC_HOURS` | `6` | Library sync interval |
 | `REWINDTV_HDHR_PROFILE` | `0` | Profile whose lineup the HDHomeRun tuner (for Plex) exposes; `0` = shared channels |
+
+## Backup & restore
+
+- **Settings → Backup & restore → Download backup** saves everything you set up in one file:
+  - profiles and servers (including their sign-in)
+  - channels, time-of-day blocks and skip settings
+  - logos, intro/credits markers and settings
+- RewindTV also writes one to `backups/` every night at about 3:30 am and keeps two weeks.
+- **To move or rebuild:**
+  1. Install RewindTV fresh.
+  2. Go to **Restore from file…** (or pick a nightly backup).
+  3. Confirm.
+- After that, RewindTV reconnects to your servers, syncs, and rebuilds the guides.
+- Before any restore, your current setup is saved as a backup, so a restore can always be undone.
+- Backup files contain your Plex/Jellyfin sign-in, so keep them private.
 
 ## Security on a home network
 

@@ -240,13 +240,12 @@ async fn insert_channel(st: &AppState, c: &ChannelIo) -> ApiResult<i64> {
     let color = c.color.clone().unwrap_or_else(|| PALETTE[(number as usize) % PALETTE.len()].to_string());
     let mut tx = st.db.begin().await?;
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO channels (number, name, color, logo, owner_user_id, rule, ordering, block_size, avoid_repeat_hours, align_minutes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO channels (number, name, color, owner_user_id, rule, ordering, block_size, avoid_repeat_hours, align_minutes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(number)
     .bind(c.name.trim())
     .bind(color)
-    .bind(&c.logo)
     .bind(c.owner_user_id)
     .bind(serde_json::to_string(&c.rule)?)
     .bind(ordering_str(c.ordering))
@@ -287,14 +286,13 @@ pub async fn update(State(st): State<AppState>, Path(id): Path<i64>, Json(c): Js
     validate(&c)?;
     let mut tx = st.db.begin().await?;
     let res = sqlx::query(
-        "UPDATE channels SET number = COALESCE(?, number), name = ?, color = COALESCE(?, color), logo = ?, owner_user_id = ?,
+        "UPDATE channels SET number = COALESCE(?, number), name = ?, color = COALESCE(?, color), owner_user_id = ?,
             rule = ?, ordering = ?, block_size = ?, avoid_repeat_hours = ?, align_minutes = ?, updated_at = ?
          WHERE id = ?",
     )
     .bind(c.number)
     .bind(c.name.trim())
     .bind(&c.color)
-    .bind(&c.logo)
     .bind(c.owner_user_id)
     .bind(serde_json::to_string(&c.rule)?)
     .bind(ordering_str(c.ordering))
@@ -317,7 +315,9 @@ pub async fn update(State(st): State<AppState>, Path(id): Path<i64>, Json(c): Js
 }
 
 pub async fn remove(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<Json<()>> {
+    let logo: Option<Option<String>> = sqlx::query_scalar("SELECT logo FROM channels WHERE id = ?").bind(id).fetch_optional(&st.db).await?;
     sqlx::query("DELETE FROM channels WHERE id = ?").bind(id).execute(&st.db).await?;
+    super::logos::remove_file(&st, logo.flatten().as_deref()).await;
     Ok(Json(()))
 }
 

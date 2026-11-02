@@ -7,6 +7,10 @@ pub struct Config {
     pub data_dir: PathBuf,
     /// Intro/credits marker files, kept apart from the media.
     pub markers_dir: PathBuf,
+    /// Uploaded channel logos.
+    pub logos_dir: PathBuf,
+    /// Automatic nightly backups.
+    pub backups_dir: PathBuf,
     /// Server path prefix -> local path prefix, for reading media straight
     /// from a mounted folder (faster marker detection). From
     /// REWINDTV_PATH_MAP="/data/media=/media;/mnt/tv=/tv".
@@ -56,6 +60,8 @@ impl Config {
             path_maps: env("REWINDTV_PATH_MAP")
                 .map(|v| v.split(';').filter_map(|p| p.split_once('=')).map(|(a, b)| (a.trim().to_string(), b.trim().to_string())).collect())
                 .unwrap_or_default(),
+            logos_dir: home.as_ref().map(|h| h.join("logos")).unwrap_or_else(|| data_dir.join("logos")),
+            backups_dir: home.as_ref().map(|h| h.join("backups")).unwrap_or_else(|| data_dir.join("backups")),
             markers_dir: env("REWINDTV_MARKERS_DIR")
                 .map(PathBuf::from)
                 .or_else(|| home.as_ref().map(|h| h.join("markers")))

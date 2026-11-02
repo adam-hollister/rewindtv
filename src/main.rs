@@ -2,6 +2,7 @@
 #![allow(clippy::type_complexity)]
 
 mod api;
+mod backup;
 mod config;
 mod db;
 mod error;
@@ -37,7 +38,9 @@ async fn main() -> anyhow::Result<()> {
         return health(cfg.port).await;
     }
     let db = db::open(&cfg.data_dir).await?;
-    db::ensure_writable(&cfg.markers_dir)?;
+    for dir in [&cfg.markers_dir, &cfg.logos_dir, &cfg.backups_dir] {
+        db::ensure_writable(dir)?;
+    }
     tracing::info!("database in {}, intro/credits markers in {}", cfg.data_dir.display(), cfg.markers_dir.display());
     let http = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -124,6 +127,7 @@ fn spawn_background(state: AppState) {
     });
 
     tokio::spawn(stream::hdhr::serve(state.clone()));
+    tokio::spawn(backup::nightly(state.clone()));
 
     // Stop transcodes nobody is watching any more.
     tokio::spawn(async move {

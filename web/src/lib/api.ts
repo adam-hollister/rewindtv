@@ -128,6 +128,8 @@ export interface PlexServer {
 }
 export interface DiagnoseCheck { name: string; ok: boolean; detail: string; ms: number }
 export interface DiagnoseReport { source: string; kind: string; item: string | null; ok: boolean; checks: DiagnoseCheck[] }
+export interface ArtChoice { title: string; source_id: number; poster: string | null; backdrop: string | null; poster_url: string | null; backdrop_url: string | null }
+export interface BackupFile { name: string; bytes: number; modified: number; automatic: boolean }
 export interface Status { version: string; timezone: string; sources: number; items: number; channels: number; users: number; sessions: number }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -175,6 +177,21 @@ export const api = {
   saveMarkerRule: (r: MarkerRule) => req<null>('PUT', '/api/markers/rule', r),
   deleteMarkerRule: (show_key: string, season: number | null, kind: string) => req<null>('DELETE', '/api/markers/rule', { show_key, season, kind }),
   playItem: (id: number, at: number) => req<{ url: string; session: string; offset: number; duration: number }>('POST', `/api/items/${id}/play?at=${Math.round(at)}`),
+  uploadLogo: async (id: number, file: Blob) => {
+    const res = await fetch(`/api/channels/${id}/logo`, { method: 'PUT', body: file });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+    return (await res.json()) as { logo: string | null };
+  },
+  logoFromArt: (id: number, source_id: number, path: string) => req<{ logo: string | null }>('POST', `/api/channels/${id}/logo/from-art`, { source_id, path }),
+  clearLogo: (id: number) => req<{ logo: string | null }>('DELETE', `/api/channels/${id}/logo`),
+  artChoices: (id: number) => req<ArtChoice[]>('GET', `/api/channels/${id}/art-choices`),
+  backups: () => req<{ dir: string; files: BackupFile[] }>('GET', '/api/backups'),
+  restoreBackupFile: async (file: Blob) => {
+    const res = await fetch('/api/backup/restore', { method: 'POST', body: file });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.json();
+  },
+  restoreBackup: (name: string) => req<{ ok: boolean }>('POST', `/api/backups/${encodeURIComponent(name)}/restore`),
   channelCoverage: (id: number) => req<Coverage>('GET', `/api/channels/${id}/markers`),
   syncStatus: () => req<SyncStatus>('GET', '/api/sync'),
   syncNow: () => req<SyncStatus>('POST', '/api/sync'),

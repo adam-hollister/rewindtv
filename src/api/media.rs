@@ -155,28 +155,3 @@ pub async fn image(State(st): State<AppState>, Path(source): Path<i64>, Query(q)
     Ok(out.body(Body::from_stream(res.bytes_stream())).map_err(anyhow::Error::from)?)
 }
 
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
-}
-
-/// A generated channel "bug" used as the logo when none is set.
-pub async fn logo(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<Response> {
-    let (number, name, color): (i64, String, String) = sqlx::query_as("SELECT number, name, color FROM channels WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&st.db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let short: String = name.chars().take(14).collect();
-    let svg = format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{color}"/><stop offset="1" stop-color="{color}" stop-opacity="0.55"/></linearGradient></defs>
-<rect width="400" height="300" rx="36" fill="#111318"/>
-<rect x="14" y="14" width="372" height="272" rx="26" fill="url(#g)"/>
-<text x="200" y="170" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="130" fill="#fff">{number}</text>
-<text x="200" y="240" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="36" letter-spacing="2" fill="#fff" fill-opacity="0.92">{name}</text>
-</svg>"##,
-        color = esc(&color),
-        name = esc(&short.to_uppercase()),
-    );
-    Ok(([(header::CONTENT_TYPE, "image/svg+xml"), (header::CACHE_CONTROL, "no-cache")], svg).into_response())
-}

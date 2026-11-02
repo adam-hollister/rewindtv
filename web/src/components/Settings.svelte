@@ -6,6 +6,7 @@
   import PlexSignIn from './PlexSignIn.svelte';
   import Diagnose from './Diagnose.svelte';
   import MarkersCard from './MarkersCard.svelte';
+  import BackupCard from './BackupCard.svelte';
 
   let sources = $state<Source[]>([]);
   let status = $state<Status | null>(null);
@@ -197,6 +198,8 @@
       {/each}
     </div>
   </section>
+
+  <BackupCard />
 
   <section class="card pad">
     <h2>Maintenance</h2>

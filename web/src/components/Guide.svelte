@@ -200,8 +200,8 @@
 
 <div class="toolbar">
   <div class="segmented">
-    <button class:on={!onlyFav} onclick={() => (onlyFav = false)}>All<span class="wide"> channels</span></button>
-    <button class:on={onlyFav} onclick={() => (onlyFav = true)}>★<span class="wide"> Favorites</span></button>
+    <button class:on={!onlyFav} onclick={() => (onlyFav = false)}>All<span class="wide">&nbsp;channels</span></button>
+    <button class:on={onlyFav} onclick={() => (onlyFav = true)}>★<span class="wide">&nbsp;Favorites</span></button>
   </div>
   <div class="spacer"></div>
   <button class="btn small" onclick={scrollNow}>Now</button>
@@ -230,7 +230,7 @@
       {#each channels as ch, ri (ch.id)}
         <div class="row-ch">
           <button class="ch" data-ch={ri} onclick={() => watch(ch)} onkeydown={(e) => chKey(e, ri)} title="Watch {ch.name}">
-            <ChannelBadge number={ch.number} color={ch.color} />
+            <ChannelBadge number={ch.number} color={ch.color} id={ch.id} logo={ch.logo} />
             <span class="chname">{ch.name}</span>
             <span
               class="fav"

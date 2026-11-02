@@ -6,6 +6,7 @@
   import RuleEditor from './RuleEditor.svelte';
   import WeekTimeline from './WeekTimeline.svelte';
   import ChannelBadge from './ChannelBadge.svelte';
+  import LogoPicker from './LogoPicker.svelte';
 
   let { id }: { id: number | null } = $props();
 
@@ -30,6 +31,7 @@
   let coverage = $state<Coverage | null>(null);
   let markerCfg = $state<MarkerSettings | null>(null);
   let scanning = $state(false);
+  let pickingLogo = $state(false);
 
   const SOURCE_NAMES: Record<string, string> = { server: 'from Plex/Jellyfin', manual: 'set by you', rule: 'season rules', detected: 'auto-detected' };
 
@@ -124,7 +126,14 @@
       <div class="main">
         <section class="card pad">
           <div class="ident">
-            <ChannelBadge number={ch.number ?? 0} color={ch.color ?? COLORS[0]} size="xl" />
+            {#if id !== null}
+              <button type="button" class="logo-btn" onclick={() => (pickingLogo = true)} title="Change logo">
+                <ChannelBadge number={ch.number ?? 0} color={ch.color ?? COLORS[0]} id={id} logo={ch.logo ?? null} size="xl" />
+                <span class="tiny">Change logo</span>
+              </button>
+            {:else}
+              <div class="logo-btn"><ChannelBadge number={ch.number ?? 0} color={ch.color ?? COLORS[0]} size="xl" /><span class="tiny dim">Logo after saving</span></div>
+            {/if}
             <div class="ident-fields">
               <div class="two">
                 <label class="field">Channel name<input type="text" bind:value={ch.name} placeholder="Saturday Morning Toons" /></label>
@@ -290,6 +299,11 @@
   {/if}
 </div>
 
+{#if pickingLogo && id !== null}
+  <LogoPicker channelId={id} name={ch.name || 'this channel'} number={ch.number ?? 0} color={ch.color ?? COLORS[0]} logo={ch.logo ?? null}
+    onchange={(l) => (ch.logo = l)} onclose={() => (pickingLogo = false)} />
+{/if}
+
 <style>
   .head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
@@ -297,6 +311,8 @@
   .pad { padding: 22px; }
   .sub { margin: 6px 0 16px; }
   .ident { display: flex; gap: 20px; align-items: center; }
+  .logo-btn { display: grid; justify-items: center; gap: 8px; padding: 6px; border: 0; background: none; border-radius: 14px; color: var(--text-2); }
+  button.logo-btn:hover span, button.logo-btn:focus-visible span { color: var(--accent); }
   .ident-fields { flex: 1; display: grid; gap: 14px; }
   .two { display: grid; grid-template-columns: 1fr 120px; gap: 12px; }
   .slot-body .two { grid-template-columns: 1fr 130px 130px; }

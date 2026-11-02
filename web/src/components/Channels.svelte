@@ -68,7 +68,7 @@
           <div class="art">
             {#if c.now?.art || c.now?.thumb}<img src={c.now.art ?? c.now.thumb} alt="" loading="lazy" />{/if}
             <div class="art-shade"></div>
-            <ChannelBadge number={c.number} color={c.color} size="lg" />
+            <ChannelBadge number={c.number} color={c.color} id={c.id} logo={c.logo} size="lg" />
             <span class="owner badge">{c.owner_user_id === null ? 'Shared' : 'Private'}</span>
           </div>
           <div class="body">

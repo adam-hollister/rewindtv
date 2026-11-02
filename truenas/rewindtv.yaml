@@ -6,6 +6,8 @@
 # inside it:
 #   data/     the database (channels, profiles, guide)
 #   markers/  intro/credits markers, one JSON file per show
+#   logos/    channel logos you upload or pick
+#   backups/  nightly backups (two weeks kept)
 # If your pool isn't called "important", change the host path below.
 services:
   rewindtv:

@@ -312,7 +312,7 @@
     <div class="slate">
       <div class="scan"></div>
       <div class="slate-card">
-        {#if channel}<ChannelBadge number={channel.number} color={channel.color} size="lg" />{/if}
+        {#if channel}<ChannelBadge number={channel.number} color={channel.color} id={channel.id} logo={channel.logo} size="lg" />{/if}
         <div class="slate-kicker">COMING UP NEXT</div>
         {#if next}
           {#if next.thumb}<img src={next.thumb} alt="" />{/if}
@@ -365,7 +365,7 @@
   {#if p && channel}
     <div class="banner" class:on={overlay} role="presentation" onclick={(e) => e.stopPropagation()}>
       <div class="b-left">
-        <ChannelBadge number={channel.number} color={channel.color} size="xl" />
+        <ChannelBadge number={channel.number} color={channel.color} id={channel.id} logo={channel.logo} size="xl" />
         <div class="b-chname">{channel.name}</div>
       </div>
       <div class="b-main">
@@ -403,7 +403,7 @@
       <div class="mg-list">
         {#each visible as c (c.id)}
           <button class="mg-row" class:on={c.id === channelId} onclick={() => { miniGuide = false; go(`watch/${c.id}`); }}>
-            <ChannelBadge number={c.number} color={c.color} />
+            <ChannelBadge number={c.number} color={c.color} id={c.id} logo={c.logo} />
             <span class="mg-info">
               <span class="mg-name">{c.name}</span>
               <span class="mg-now">{c.now?.title ?? '—'}</span>
