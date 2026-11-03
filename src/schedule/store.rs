@@ -18,6 +18,7 @@ pub const HORIZON_MS: i64 = 7 * 24 * 3600 * 1000;
 struct ItemRow {
     id: i64,
     library_id: i64,
+    role: String,
     kind: String,
     title: String,
     show_key: Option<String>,
@@ -43,7 +44,7 @@ async fn tags(db: &SqlitePool, sql: &str) -> sqlx::Result<std::collections::Hash
 /// Every playable item from enabled sources and libraries.
 pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
     let rows: Vec<ItemRow> = sqlx::query_as(
-        "SELECT m.id, m.library_id, m.kind, m.title, m.show_key, m.show_title, m.season, m.episode,
+        "SELECT m.id, m.library_id, l.role, m.kind, m.title, m.show_key, m.show_title, m.season, m.episode,
                 m.year, m.duration_ms, m.content_rating, m.studio, m.media_key, m.provider_ids
          FROM media_items m
          JOIN libraries l ON l.id = m.library_id
@@ -74,6 +75,7 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
             id: r.id,
             library_id: r.library_id,
             is_movie: r.kind == "movie",
+            role: super::rule::Role::parse(&r.role),
             title: r.title,
             show_key: r.show_key,
             show_title: r.show_title,
@@ -90,8 +92,9 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
 }
 
 pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Option<ChannelConfig>> {
-    let Some((rule, ordering, block_size, avoid, align, skip_intros, skip_credits)) = sqlx::query_as::<_, (String, String, i64, i64, i64, bool, bool)>(
-        "SELECT rule, ordering, block_size, avoid_repeat_hours, align_minutes, skip_intros, skip_credits FROM channels WHERE id = ?",
+    let Some((rule, ordering, block_size, avoid, align, skip_intros, skip_credits, fill_commercials, station_ids)) = sqlx::query_as::<_, (String, String, i64, i64, i64, bool, bool, bool, bool)>(
+        "SELECT rule, ordering, block_size, avoid_repeat_hours, align_minutes, skip_intros, skip_credits, fill_commercials, station_ids
+         FROM channels WHERE id = ?",
     )
     .bind(channel_id)
     .fetch_optional(db)
@@ -125,6 +128,8 @@ pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Opt
         align_minutes: align,
         slots,
         skip: super::cuts::Skip { intros: skip_intros, credits: skip_credits },
+        fill_commercials,
+        station_ids,
     }))
 }
 
@@ -156,13 +161,14 @@ pub async fn extend_channel(db: &SqlitePool, items: &[Item], channel_id: i64, tz
 
     let mut tx = db.begin().await?;
     for p in &programs {
-        sqlx::query("INSERT INTO programs (channel_id, start_ms, end_ms, item_id, slot_id, cuts) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO programs (channel_id, start_ms, end_ms, item_id, slot_id, cuts, kind) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(channel_id)
             .bind(p.start_ms)
             .bind(p.end_ms)
             .bind(p.item.map(|ix| items[ix].id))
             .bind(p.slot_id)
             .bind((!p.cuts.is_empty()).then(|| serde_json::to_string(&p.cuts).unwrap_or_default()))
+            .bind(p.kind.as_str())
             .execute(&mut *tx)
             .await?;
     }

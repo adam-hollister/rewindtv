@@ -75,7 +75,7 @@ pub async fn xmltv(
     // A week ahead: Plex only refreshes XMLTV guides about once a day.
     let hours = q.hours.unwrap_or(168).clamp(1, 168);
     let ids: Vec<i64> = channels.iter().map(|c| c.id).collect();
-    let programs = guide::range(&st.db, &ids, now - 3_600_000, now + hours * 3_600_000).await?;
+    let programs = guide::fold_breaks(guide::range(&st.db, &ids, now - 3_600_000, now + hours * 3_600_000).await?);
     let genres = item_genres(&st, &programs).await?;
 
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE tv SYSTEM \"xmltv.dtd\">\n<tv generator-info-name=\"RewindTV\">\n");

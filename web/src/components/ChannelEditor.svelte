@@ -21,7 +21,7 @@
   let ch = $state<Channel>({
     name: '', number: null, color: COLORS[Math.floor(Math.random() * COLORS.length)], owner_user_id: null,
     rule: emptyRule(), ordering: 'shuffle', block_size: 3, avoid_repeat_hours: 24, align_minutes: 0,
-    skip_intros: false, skip_credits: false, slots: [],
+    skip_intros: false, skip_credits: false, fill_commercials: false, station_ids: false, slots: [],
   });
   let facets = $state<Facets | null>(null);
   let openSlot = $state<number | null>(null);
@@ -32,6 +32,8 @@
   let markerCfg = $state<MarkerSettings | null>(null);
   let scanning = $state(false);
   let pickingLogo = $state(false);
+  // Libraries marked as commercials / station IDs in Settings.
+  let breakLibs = $state({ commercials: 0, bumpers: 0 });
 
   const SOURCE_NAMES: Record<string, string> = { server: 'from Plex/Jellyfin', manual: 'set by you', rule: 'season rules', detected: 'auto-detected' };
 
@@ -64,6 +66,9 @@
       ch = c;
     }
     loadCoverage();
+    const sources = await api.sources();
+    const libs = sources.flatMap((s) => s.libraries).filter((l) => l.enabled);
+    breakLibs = { commercials: libs.filter((l) => l.role === 'commercials').length, bumpers: libs.filter((l) => l.role === 'bumpers').length };
   });
 
   function addSlot() {
@@ -184,6 +189,21 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="card pad">
+          <h2>Breaks</h2>
+          <p class="muted small sub">Real TV had commercials and station IDs. Turn on "Start shows on :00 / :30" above to leave room for them between shows.</p>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" bind:checked={ch.fill_commercials} /><span class="sw-ui"></span><span><b>Commercial breaks</b><span class="small muted">Fill the gaps between shows with commercials instead of a "coming up next" card.</span></span></label>
+            <label class="toggle"><input type="checkbox" bind:checked={ch.station_ids} /><span class="sw-ui"></span><span><b>Station IDs</b><span class="small muted">A short bumper ("You're watching…") right before each show.</span></span></label>
+          </div>
+          {#if (ch.fill_commercials && breakLibs.commercials === 0) || (ch.station_ids && breakLibs.bumpers === 0)}
+            <p class="small warn-note">⚠ No library is marked as {ch.fill_commercials && breakLibs.commercials === 0 ? 'Commercials' : 'Station IDs'} yet. Put your clips in their own Plex/Jellyfin library, then pick its role next to it in <a href="#/settings">Settings → Media servers</a>.</p>
+          {/if}
+          {#if ch.fill_commercials && ch.align_minutes === 0}
+            <p class="tiny dim">Tip: with "Any minute" start times there are few gaps — choose :00 / :30 for regular breaks.</p>
+          {/if}
         </section>
 
         <section class="card pad">
@@ -335,6 +355,7 @@
   .toggle input:checked + .sw-ui::after { transform: translateX(18px); }
   .toggle input:focus-visible + .sw-ui { outline: 3px solid var(--accent); outline-offset: 2px; }
   .coverage { margin-top: 14px; display: grid; gap: 10px; }
+  .warn-note { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgb(245 165 36 / 0.08); border: 1px solid rgb(245 165 36 / 0.35); }
   .cov-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center; font-size: 14px; }
   .presets, .days { display: flex; gap: 8px; flex-wrap: wrap; }
   .slots { display: grid; gap: 8px; margin-top: 16px; }

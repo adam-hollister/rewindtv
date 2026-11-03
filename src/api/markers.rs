@@ -56,7 +56,7 @@ async fn refresh(st: &AppState) -> ApiResult<()> {
 
 pub async fn settings(State(st): State<AppState>) -> ApiResult<Json<MarkerSettings>> {
     let items = st.items().await?;
-    let eps: Vec<Vec<Marker>> = items.iter().filter(|i| !i.is_movie).map(|i| i.markers.clone()).collect();
+    let eps: Vec<Vec<Marker>> = items.iter().filter(|i| !i.is_movie && i.role == crate::schedule::rule::Role::Content).map(|i| i.markers.clone()).collect();
     Ok(Json(MarkerSettings {
         sources: markers::sources(&st.db).await,
         detect: st.detect_status.read().await.clone(),
@@ -120,7 +120,7 @@ pub struct ShowRow {
 pub async fn shows(State(st): State<AppState>) -> ApiResult<Json<Vec<ShowRow>>> {
     let items = st.items().await?;
     let mut rows: HashMap<String, ShowRow> = HashMap::new();
-    for it in items.iter().filter(|i| !i.is_movie) {
+    for it in items.iter().filter(|i| !i.is_movie && i.role == crate::schedule::rule::Role::Content) {
         let Some(title) = &it.show_title else { continue };
         let key = markers::show_key(title);
         let r = rows.entry(key.clone()).or_insert_with(|| ShowRow { key, title: title.clone(), episodes: 0, intro: 0, credits: 0 });

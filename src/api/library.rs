@@ -52,7 +52,7 @@ pub async fn facets(State(st): State<AppState>) -> ApiResult<Json<Facets>> {
     let items = st.items().await?;
     let (mut genres, mut collections, mut studios, mut ratings) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
     let mut shows: BTreeMap<String, (String, usize)> = BTreeMap::new();
-    for it in items.iter() {
+    for it in items.iter().filter(|i| i.role == crate::schedule::rule::Role::Content) {
         for g in &it.genres {
             *genres.entry(g.clone()).or_insert(0) += 1;
         }
@@ -122,5 +122,6 @@ pub async fn preview(State(st): State<AppState>, Json(rule): Json<Rule>) -> ApiR
 
 pub async fn suggestions(State(st): State<AppState>) -> ApiResult<Json<Vec<Suggestion>>> {
     let items = st.items().await?;
-    Ok(Json(autogen::suggest(&items)))
+    let content: Vec<_> = items.iter().filter(|i| i.role == crate::schedule::rule::Role::Content).cloned().collect();
+    Ok(Json(autogen::suggest(&content)))
 }

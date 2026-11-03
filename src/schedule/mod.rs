@@ -13,10 +13,11 @@ use std::rc::Rc;
 
 use chrono::{Offset, TimeZone};
 use chrono_tz::Tz;
+use rand::seq::SliceRandom;
 use rand::Rng;
 
 use ordering::{ChannelState, Ordering, Picker, PoolIndex};
-use rule::{Item, Rule};
+use rule::{Item, Role, Rule};
 use slots::Slot;
 
 const MINUTE: i64 = 60_000;
@@ -34,6 +35,10 @@ pub struct ChannelConfig {
     pub align_minutes: i64,
     pub slots: Vec<Slot>,
     pub skip: cuts::Skip,
+    /// Fill gaps between shows with commercials.
+    pub fill_commercials: bool,
+    /// Air a station ID right before each show.
+    pub station_ids: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +50,70 @@ pub struct Program {
     pub slot_id: Option<i64>,
     /// File-time ranges skipped while this program airs.
     pub cuts: Vec<(i64, i64)>,
+    pub kind: ProgramKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProgramKind {
+    #[default]
+    Show,
+    /// A commercial filling a gap.
+    Break,
+    /// A station ID before a show.
+    Bumper,
+}
+
+impl ProgramKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProgramKind::Show => "show",
+            ProgramKind::Break => "break",
+            ProgramKind::Bumper => "bumper",
+        }
+    }
+}
+
+/// Fill [t, end) with commercials from a shuffled deck (kept in the channel
+/// state so they rotate), or with filler when there are none or nothing fits.
+#[allow(clippy::too_many_arguments)]
+fn fill_gap<R: Rng>(
+    out: &mut Vec<Program>,
+    items: &[Item],
+    ads: &[usize],
+    state: &mut ChannelState,
+    rng: &mut R,
+    mut t: i64,
+    end: i64,
+    slot_id: Option<i64>,
+) {
+    if !ads.is_empty() {
+        let by_id: HashMap<i64, usize> = ads.iter().map(|&ix| (items[ix].id, ix)).collect();
+        let shortest = ads.iter().map(|&ix| items[ix].duration_ms).min().unwrap_or(i64::MAX);
+        while end - t >= shortest {
+            if state.ads.is_empty() {
+                let mut ids: Vec<i64> = by_id.keys().copied().collect();
+                ids.shuffle(rng);
+                state.ads = ids;
+            }
+            // Next commercial in the deck that fits; the ones that don't wait their turn.
+            let pos = state.ads.iter().rposition(|id| by_id.get(id).is_some_and(|&ix| items[ix].duration_ms <= end - t));
+            let Some(pos) = pos else {
+                if state.ads.len() == by_id.len() {
+                    break; // a full deck and nothing fits
+                }
+                state.ads.clear();
+                continue;
+            };
+            let id = state.ads.remove(pos);
+            let ix = by_id[&id];
+            let len = items[ix].duration_ms;
+            out.push(Program { start_ms: t, end_ms: t + len, item: Some(ix), slot_id, cuts: Vec::new(), kind: ProgramKind::Break });
+            t += len;
+        }
+    }
+    if end > t {
+        push(out, Program { start_ms: t, end_ms: end, item: None, slot_id, cuts: Vec::new(), kind: ProgramKind::Show });
+    }
 }
 
 /// Round `t_ms` up to the next multiple of `minutes` in local time.
@@ -102,6 +171,9 @@ pub fn generate<R: Rng>(
         .map(|it| if cfg.skip.any() { cuts::cuts_for(&it.markers, it.duration_ms, cfg.skip) } else { Vec::new() })
         .collect();
     let air_len = |ix: usize| cuts::effective_len(items[ix].duration_ms, &item_cuts[ix]);
+    let by_role = |role: Role| -> Vec<usize> { (0..items.len()).filter(|&ix| items[ix].role == role && items[ix].duration_ms > 0).collect() };
+    let ads = if cfg.fill_commercials { by_role(Role::Commercials) } else { Vec::new() };
+    let bumpers = if cfg.station_ids { by_role(Role::Bumpers) } else { Vec::new() };
 
     let mut out = Vec::new();
     let mut t = from_ms;
@@ -113,7 +185,7 @@ pub fn generate<R: Rng>(
 
         if let Some(b) = boundary {
             if b - t < MIN_SLOT_REMAINDER {
-                push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id, cuts: Vec::new() });
+                fill_gap(&mut out, items, &ads, state, rng, t, b, slot_id);
                 t = b;
                 continue;
             }
@@ -129,7 +201,7 @@ pub fn generate<R: Rng>(
         let snapshot = state.pools.get(&pool_key).cloned();
         let Some(ix) = picker.next(&pool_key, state, t, rng) else {
             let end = boundary.map_or(t + EMPTY_FILLER, |b| b.min(t + EMPTY_FILLER));
-            push(&mut out, Program { start_ms: t, end_ms: end, item: None, slot_id, cuts: Vec::new() });
+            push(&mut out, Program { start_ms: t, end_ms: end, item: None, slot_id, cuts: Vec::new(), kind: ProgramKind::Show });
             t = end;
             continue;
         };
@@ -148,7 +220,7 @@ pub fn generate<R: Rng>(
                 let fresh: Vec<usize> = fits.iter().copied().filter(|i| !recent.contains(&items[*i].id)).collect();
                 let choices = if fresh.is_empty() { &fits } else { &fresh };
                 if choices.is_empty() {
-                    push(&mut out, Program { start_ms: t, end_ms: b, item: None, slot_id, cuts: Vec::new() });
+                    fill_gap(&mut out, items, &ads, state, rng, t, b, slot_id);
                     t = b;
                     continue;
                 }
@@ -158,14 +230,24 @@ pub fn generate<R: Rng>(
         };
         let end = t + air_len(ix);
 
+        // A station ID first, if it still lets the show finish before the next block.
+        if !bumpers.is_empty() {
+            let bix = bumpers[rng.gen_range(0..bumpers.len())];
+            let blen = items[bix].duration_ms;
+            if boundary.is_none_or(|b| end + blen <= b) {
+                out.push(Program { start_ms: t, end_ms: t + blen, item: Some(bix), slot_id, cuts: Vec::new(), kind: ProgramKind::Bumper });
+                t += blen;
+            }
+        }
+        let end = t + air_len(ix);
         state.record(items[ix].id, t, avoid_ms.max(MINUTE));
-        push(&mut out, Program { start_ms: t, end_ms: end, item: Some(ix), slot_id, cuts: item_cuts[ix].clone() });
+        push(&mut out, Program { start_ms: t, end_ms: end, item: Some(ix), slot_id, cuts: item_cuts[ix].clone(), kind: ProgramKind::Show });
         t = end;
 
         let aligned = align_up(t, cfg.align_minutes, tz);
         let aligned = boundary.filter(|&b| b > t).map_or(aligned, |b| aligned.min(b));
         if aligned > t {
-            push(&mut out, Program { start_ms: t, end_ms: aligned, item: None, slot_id, cuts: Vec::new() });
+            fill_gap(&mut out, items, &ads, state, rng, t, aligned, slot_id);
             t = aligned;
         }
     }
@@ -205,6 +287,8 @@ mod tests {
             align_minutes: align,
             slots,
             skip: cuts::Skip::default(),
+            fill_commercials: false,
+            station_ids: false,
         }
     }
 

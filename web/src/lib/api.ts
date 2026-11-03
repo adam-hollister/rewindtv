@@ -81,6 +81,8 @@ export interface Channel {
   align_minutes: number;
   skip_intros: boolean;
   skip_credits: boolean;
+  fill_commercials: boolean;
+  station_ids: boolean;
   slots: Slot[];
 }
 
@@ -96,7 +98,8 @@ export interface Tune {
   next: Program | null;
 }
 
-export interface Library { id: number; source_id: number; name: string; kind: string; enabled: boolean; items: number }
+export type LibraryRole = 'content' | 'commercials' | 'bumpers';
+export interface Library { id: number; source_id: number; name: string; kind: string; enabled: boolean; role: LibraryRole; items: number }
 export interface Source {
   id: number; kind: 'plex' | 'jellyfin'; name: string; url: string; enabled: boolean;
   last_sync: number | null; last_error: string | null; libraries: Library[];
@@ -163,6 +166,7 @@ export const api = {
   updateSource: (id: number, s: Partial<{ name: string; url: string; token: string; enabled: boolean }>) => req<null>('PATCH', `/api/sources/${id}`, s),
   deleteSource: (id: number) => req<null>('DELETE', `/api/sources/${id}`),
   setLibrary: (id: number, enabled: boolean) => req<null>('PATCH', `/api/libraries/${id}`, { enabled }),
+  setLibraryRole: (id: number, role: LibraryRole) => req<null>('PATCH', `/api/libraries/${id}`, { role }),
   diagnose: (id: number) => req<DiagnoseReport>('POST', `/api/sources/${id}/diagnose`),
   plexPin: () => req<PlexPin>('POST', '/api/plex/pin'),
   plexPinStatus: (id: number) => req<{ token: string | null }>('GET', `/api/plex/pin/${id}`),

@@ -106,6 +106,10 @@ pub struct ChannelIo {
     #[serde(default)]
     skip_credits: bool,
     #[serde(default)]
+    fill_commercials: bool,
+    #[serde(default)]
+    station_ids: bool,
+    #[serde(default)]
     slots: Vec<SlotIo>,
 }
 
@@ -164,6 +168,8 @@ pub async fn get(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<J
         align_minutes: align,
         skip_intros: cfg.skip.intros,
         skip_credits: cfg.skip.credits,
+        fill_commercials: cfg.fill_commercials,
+        station_ids: cfg.station_ids,
         slots: cfg
             .slots
             .into_iter()
@@ -210,9 +216,11 @@ async fn save_slots(tx: &mut sqlx::SqliteConnection, channel_id: i64, slots: &[S
 }
 
 async fn save_skip(tx: &mut sqlx::SqliteConnection, channel_id: i64, c: &ChannelIo) -> ApiResult<()> {
-    sqlx::query("UPDATE channels SET skip_intros = ?, skip_credits = ? WHERE id = ?")
+    sqlx::query("UPDATE channels SET skip_intros = ?, skip_credits = ?, fill_commercials = ?, station_ids = ? WHERE id = ?")
         .bind(c.skip_intros)
         .bind(c.skip_credits)
+        .bind(c.fill_commercials)
+        .bind(c.station_ids)
         .bind(channel_id)
         .execute(&mut *tx)
         .await?;
@@ -370,6 +378,8 @@ pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> Ap
         align_minutes: c.align_minutes,
         slots: slots.clone(),
         skip: crate::schedule::cuts::Skip { intros: c.skip_intros, credits: c.skip_credits },
+        fill_commercials: c.fill_commercials,
+        station_ids: c.station_ids,
     };
     let now = now_ms();
     let from = now.div_euclid(1_800_000) * 1_800_000;
@@ -381,6 +391,15 @@ pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> Ap
             .map(|p| {
                 let block = p.slot_id.and_then(|id| slots.iter().find(|s| s.id == id)).map(|s| s.title.clone());
                 match p.item.map(|ix| &items[ix]) {
+                    Some(it) if p.kind != crate::schedule::ProgramKind::Show => PreviewProgram {
+                        start: p.start_ms,
+                        end: p.end_ms,
+                        title: if p.kind == crate::schedule::ProgramKind::Bumper { "Station ID".into() } else { "Commercial".into() },
+                        subtitle: Some(it.title.clone()),
+                        block,
+                        filler: true,
+                        trimmed: false,
+                    },
                     Some(it) => PreviewProgram {
                         start: p.start_ms,
                         end: p.end_ms,
@@ -429,7 +448,7 @@ pub async fn guide(State(st): State<AppState>, Query(q): Query<GuideQuery>) -> A
     let to = from + q.hours.unwrap_or(6).clamp(1, 48) * 3_600_000;
     let channels = guide::lineup(&st.db, q.user, false).await?;
     let ids: Vec<i64> = channels.iter().map(|c| c.id).collect();
-    let programs = guide::range(&st.db, &ids, from, to).await?;
+    let programs = guide::fold_breaks(guide::range(&st.db, &ids, from, to).await?);
     let mut out: Vec<GuideChannel> = channels.into_iter().map(|c| GuideChannel { channel: c, programs: vec![] }).collect();
     for p in &programs {
         if let Some(c) = out.iter_mut().find(|c| c.channel.id == p.channel_id) {
@@ -469,6 +488,8 @@ pub async fn create_from_suggestions(State(st): State<AppState>, Json(input): Js
             align_minutes: 0,
             skip_intros: false,
             skip_credits: false,
+            fill_commercials: false,
+            station_ids: false,
             slots: vec![],
         };
         ids.push(insert_channel(&st, &c).await?);

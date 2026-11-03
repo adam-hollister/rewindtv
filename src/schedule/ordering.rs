@@ -45,6 +45,8 @@ pub struct ChannelState {
     pub pools: HashMap<String, PoolState>,
     /// (item id, start ms) of recent airings, oldest first.
     pub recent: VecDeque<(i64, i64)>,
+    /// Commercials still to air before the deck is reshuffled.
+    pub ads: Vec<i64>,
 }
 
 impl ChannelState {

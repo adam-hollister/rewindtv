@@ -21,6 +21,28 @@ pub struct Item {
     pub collections: Vec<String>,
     /// Intro/credits markers, already filtered to the enabled sources.
     pub markers: Vec<super::cuts::Marker>,
+    /// What the item's library is for.
+    pub role: Role,
+}
+
+/// A library's job: regular programming, commercials, or station IDs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    #[default]
+    Content,
+    Commercials,
+    Bumpers,
+}
+
+impl Role {
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "commercials" => Role::Commercials,
+            "bumpers" => Role::Bumpers,
+            _ => Role::Content,
+        }
+    }
 }
 
 impl Item {
@@ -64,6 +86,10 @@ fn opt_eq(wanted: &[String], have: &Option<String>) -> bool {
 
 impl Rule {
     pub fn matches(&self, it: &Item) -> bool {
+        // Commercials and station IDs only ever air in breaks.
+        if it.role != Role::Content {
+            return false;
+        }
         if self.exclude_items.contains(&it.id) {
             return false;
         }

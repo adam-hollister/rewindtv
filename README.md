@@ -38,6 +38,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
 - **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
 - **Skip intros and credits per channel.** Uses Plex's markers, markers you set (per season or episode), and RewindTV's own audio-based detection. Markers are saved per show in their own folder and apply on every server.
+- **Commercials & station IDs.** Mark a library as commercials or station IDs and channels can fill the gaps between shows with real old ads and bumpers. Guides still read like TV listings.
 - **Channel logos.** Upload one or pick artwork from the channel's shows; it shows in RewindTV and in Plex's Live TV guide.
 - **Backup & restore.** One file with everything you set up, plus automatic nightly backups; restoring onto a fresh install brings it all back.
 - **Sign in with Plex and a built-in check.** Sign in with Plex instead of hunting for a token. A one-click check tests every playback path on your real server.
@@ -163,6 +164,18 @@ In the guide, arrows move between programs, Enter tunes in, and typing a number 
 | `REWINDTV_TUNERS` | `6` | Tuner count advertised to Plex (simultaneous channels) |
 | `REWINDTV_SYNC_HOURS` | `6` | Library sync interval |
 | `REWINDTV_HDHR_PROFILE` | `0` | Profile whose lineup the HDHomeRun tuner (for Plex) exposes; `0` = shared channels |
+
+## Commercials & station IDs
+
+1. Put your old commercials (and, if you like, station IDs/bumpers) in their own Plex or Jellyfin libraries, e.g. a "Commercials" movies library.
+2. In **Settings → Media servers**, set that library's role to **Commercials** (or **Station IDs**). Those clips never show up as regular programming.
+3. In a channel's **Breaks** section, turn on **Commercial breaks** and/or **Station IDs**.
+4. Set **Start shows on** to `:00 / :30` so there's room for breaks.
+
+How breaks play:
+- Commercials fill the gap after each show. They're shuffled, and every ad runs before any repeats.
+- A station ID plays right before each show.
+- The guide and Plex's guide fold breaks into the show ("7:00–7:30 Cheers"), like real listings.
 
 ## Backup & restore
 

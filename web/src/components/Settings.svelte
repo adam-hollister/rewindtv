@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type Source, type Status, type SyncStatus } from '../lib/api';
+  import { api, type LibraryRole, type Source, type Status, type SyncStatus } from '../lib/api';
   import { session, loadUsers, selectUser, toast } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
   import PlexSignIn from './PlexSignIn.svelte';
@@ -78,6 +78,12 @@
     load();
   }
 
+  async function setRole(id: number, role: LibraryRole) {
+    await api.setLibraryRole(id, role);
+    toast(role === 'content' ? 'Library is regular programming again' : `Library will be used for ${role === 'commercials' ? 'commercial breaks' : 'station IDs'}`);
+    load();
+  }
+
   async function toggleLib(id: number, enabled: boolean) {
     await api.setLibrary(id, enabled);
     load();
@@ -140,10 +146,17 @@
           </div>
           <div class="libs">
             {#each s.libraries as l (l.id)}
-              <label class="lib" class:off={!l.enabled}>
-                <input type="checkbox" checked={l.enabled} onchange={(e) => toggleLib(l.id, e.currentTarget.checked)} />
-                <span>{l.name}</span><span class="dim small">{l.items.toLocaleString()}</span>
-              </label>
+              <div class="lib" class:off={!l.enabled} class:special={l.role !== 'content'}>
+                <label class="lib-on">
+                  <input type="checkbox" checked={l.enabled} onchange={(e) => toggleLib(l.id, e.currentTarget.checked)} />
+                  <span>{l.name}</span><span class="dim small">{l.items.toLocaleString()}</span>
+                </label>
+                <select class="role" value={l.role} onchange={(e) => setRole(l.id, e.currentTarget.value as LibraryRole)} title="What this library is for">
+                  <option value="content">Shows &amp; movies</option>
+                  <option value="commercials">Commercials</option>
+                  <option value="bumpers">Station IDs</option>
+                </select>
+              </div>
             {/each}
           </div>
         </div>
@@ -272,6 +285,9 @@
   .libs { display: flex; flex-wrap: wrap; gap: 8px; }
   .lib { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 13px; font-weight: 600; cursor: pointer; }
   .lib.off { opacity: 0.5; }
+  .lib.special { border-color: rgb(245 165 36 / 0.5); }
+  .lib-on { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .role { height: 26px; width: auto; padding: 0 6px; font-size: 12px; border-radius: 6px; background: var(--panel-2); }
   .lib input { accent-color: var(--accent); }
   .err { color: var(--err); }
   .ok { color: var(--ok); }

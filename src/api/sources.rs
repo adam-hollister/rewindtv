@@ -15,6 +15,7 @@ pub struct LibraryRow {
     name: String,
     kind: String,
     enabled: bool,
+    role: String,
     items: i64,
 }
 
@@ -34,7 +35,7 @@ pub async fn list(State(st): State<AppState>) -> ApiResult<Json<Vec<SourceOut>>>
     let rows: Vec<(i64, String, String, String, bool, Option<i64>, Option<String>)> =
         sqlx::query_as("SELECT id, kind, name, url, enabled, last_sync, last_error FROM sources ORDER BY id").fetch_all(&st.db).await?;
     let libs: Vec<LibraryRow> = sqlx::query_as(
-        "SELECT l.id, l.source_id, l.name, l.kind, l.enabled,
+        "SELECT l.id, l.source_id, l.name, l.kind, l.enabled, l.role,
                 (SELECT COUNT(*) FROM media_items m WHERE m.library_id = l.id AND m.missing = 0) AS items
          FROM libraries l ORDER BY l.name",
     )
@@ -133,11 +134,23 @@ pub async fn remove(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResul
 
 #[derive(Deserialize)]
 pub struct LibraryInput {
-    enabled: bool,
+    enabled: Option<bool>,
+    /// "content", "commercials" or "bumpers".
+    role: Option<String>,
 }
 
 pub async fn set_library(State(st): State<AppState>, Path(id): Path<i64>, Json(l): Json<LibraryInput>) -> ApiResult<Json<()>> {
-    sqlx::query("UPDATE libraries SET enabled = ? WHERE id = ?").bind(l.enabled).bind(id).execute(&st.db).await?;
+    if let Some(role) = &l.role {
+        if !["content", "commercials", "bumpers"].contains(&role.as_str()) {
+            return Err(ApiError::BadRequest("role must be content, commercials or bumpers".into()));
+        }
+    }
+    sqlx::query("UPDATE libraries SET enabled = COALESCE(?, enabled), role = COALESCE(?, role) WHERE id = ?")
+        .bind(l.enabled)
+        .bind(&l.role)
+        .bind(id)
+        .execute(&st.db)
+        .await?;
     st.invalidate_items().await;
     Ok(Json(()))
 }
