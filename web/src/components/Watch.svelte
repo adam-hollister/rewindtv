@@ -231,6 +231,9 @@
       case 'l':
         lastChannel();
         break;
+      case 's':
+        startOver();
+        break;
       case 'm':
         muted ? unmute() : ((muted = true), (video.muted = true));
         break;
@@ -246,6 +249,10 @@
         return;
     }
     e.preventDefault();
+  }
+
+  function startOver() {
+    if (tune?.kind === 'stream' && tune.program.id) go(`replay/${tune.program.id}`);
   }
 
   function openGuide() {
@@ -390,6 +397,7 @@
       <div class="b-ctrl">
         <button class="btn icon" onclick={() => change(1)} aria-label="Channel up" title="Channel up (↑)">▲</button>
         <button class="btn icon" onclick={() => change(-1)} aria-label="Channel down" title="Channel down (↓)">▼</button>
+        <button class="btn icon" onclick={startOver} aria-label="Start over" title="Start over (S)">⏮</button>
         <button class="btn icon" onclick={openGuide} aria-label="Channel list" title="Channel list (G)">☰</button>
         <button class="btn icon" onclick={() => (muted ? unmute() : ((muted = true), (video.muted = true)))} aria-label="Mute" title="Mute (M)">{muted ? '🔇' : '🔊'}</button>
         <button class="btn icon" onclick={toggleFullscreen} aria-label="Fullscreen" title="Fullscreen (F)">⛶</button>
@@ -451,7 +459,7 @@
   .b-prog .bar { flex: 1; max-width: 520px; }
   .b-next { font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .b-next .dim { font-weight: 800; font-size: 11px; letter-spacing: 0.08em; margin-right: 6px; }
-  .b-ctrl { display: grid; grid-template-columns: repeat(5, auto); gap: 8px; flex: none; }
+  .b-ctrl { display: grid; grid-template-columns: repeat(6, auto); gap: 8px; flex: none; }
 
   .slate { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #1d2233, #07080c 70%); }
   .scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgb(255 255 255 / 0.03) 0 2px, transparent 2px 4px); pointer-events: none; }
@@ -483,7 +491,7 @@
     .b-left :global(.badge-ch) { width: 58px; height: 42px; font-size: 20px; border-radius: 11px; }
     .b-chname { text-align: left; }
     .b-title { font-size: 22px; }
-    .b-ctrl { grid-template-columns: repeat(5, 1fr); width: 100%; }
+    .b-ctrl { grid-template-columns: repeat(6, 1fr); width: 100%; }
     .b-ctrl .btn { width: 100%; }
     .clock { margin-right: 80px; font-size: 15px; }
   }

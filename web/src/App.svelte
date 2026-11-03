@@ -10,6 +10,7 @@
   import ChannelEditor from './components/ChannelEditor.svelte';
   import Settings from './components/Settings.svelte';
   import ShowMarkers from './components/ShowMarkers.svelte';
+  import Replay from './components/Replay.svelte';
 
   onMount(() => {
     installSpatialNav();
@@ -23,6 +24,10 @@
   <div class="boot"><span class="logo">REWIND<b>TV</b></span></div>
 {:else if session.userId === null || page === 'profiles'}
   <ProfilePicker />
+{:else if page === 'replay'}
+  {#key route.parts[1]}
+    <Replay programId={Number(route.parts[1])} />
+  {/key}
 {:else if page === 'watch'}
   {#key route.parts[1]}
     <Watch channelId={Number(route.parts[1])} />

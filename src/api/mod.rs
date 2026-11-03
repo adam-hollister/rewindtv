@@ -77,6 +77,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/channels/{id}/logo/from-art", post(logos::from_art))
         .route("/api/channels/{id}/art-choices", get(logos::art_choices))
         .route("/api/channels/{id}/tune", post(media::tune))
+        .route("/api/programs/{id}/play", post(media::replay))
         .route("/api/sessions/{sid}", axum::routing::delete(media::stop_session))
         .route("/api/guide", get(channels::guide))
         .route("/api/img/{source}", get(media::image))

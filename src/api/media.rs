@@ -155,3 +155,42 @@ pub async fn image(State(st): State<AppState>, Path(source): Path<i64>, Query(q)
     Ok(out.body(Body::from_stream(res.bytes_stream())).map_err(anyhow::Error::from)?)
 }
 
+
+#[derive(Serialize)]
+pub struct Replay {
+    url: String,
+    session: String,
+    /// File position (seconds) the stream was asked to start at.
+    offset: f64,
+    duration: f64,
+    /// Parts of the file that air (skipped intros/credits stay skipped).
+    kept: Vec<(f64, f64)>,
+    channel_id: i64,
+    program: ProgramOut,
+}
+
+/// POST /api/programs/:id/play — watch a show from its start: "start over"
+/// on what's on now, or catch up on something that aired in the last day.
+pub async fn replay(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<Json<Replay>> {
+    let p = guide::by_id(&st.db, id).await?.ok_or(ApiError::NotFound)?;
+    if p.is_filler() || p.start_ms > now_ms() {
+        return Err(ApiError::BadRequest("That program hasn't aired yet".into()));
+    }
+    let src = st.source(p.source_id.unwrap_or_default()).await?;
+    let cuts = p.cut_ranges();
+    let kept = crate::schedule::cuts::kept_ranges(p.media_len(), &cuts);
+    let start = kept.first().map_or(0, |r| r.0);
+    let sid = uuid::Uuid::new_v4().simple().to_string();
+    let master = src.hls_url(p.item_key.as_deref().unwrap_or_default(), p.part_key.as_deref(), p.video_codec.as_deref(), start, &sid);
+    src.prepare(&master).await;
+    st.sessions.insert(sid.clone(), src, master).await;
+    Ok(Json(Replay {
+        url: format!("/stream/{sid}/master.m3u8"),
+        session: sid,
+        offset: start as f64 / 1000.0,
+        duration: p.media_len() as f64 / 1000.0,
+        kept: kept.into_iter().map(|(s, e)| (s as f64 / 1000.0, e as f64 / 1000.0)).collect(),
+        channel_id: p.channel_id,
+        program: (&p).into(),
+    }))
+}

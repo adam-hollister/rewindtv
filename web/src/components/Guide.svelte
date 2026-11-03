@@ -178,6 +178,9 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
             {selLive ? 'Watch live' : `Tune to ${sel.ch.number}`}
           </button>
+          {#if sel.p.start <= now && !sel.p.filler}
+            <button class="btn" onclick={() => go(`replay/${sel.p.id}`)}>⏮ Watch from start</button>
+          {/if}
           {#if selLive}
             <div class="prog"><div class="bar"><i style:width="{progress(sel.p, now) * 100}%"></i></div><span class="small muted">{minutesLeft(sel.p.end, now)}</span></div>
           {:else if sel.p.start > now}

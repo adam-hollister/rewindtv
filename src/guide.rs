@@ -98,6 +98,10 @@ pub async fn at(db: &SqlitePool, channel_id: i64, t_ms: i64) -> sqlx::Result<Opt
         .await
 }
 
+pub async fn by_id(db: &SqlitePool, id: i64) -> sqlx::Result<Option<ProgramInfo>> {
+    sqlx::query_as(&format!("{SELECT} WHERE p.id = ?")).bind(id).fetch_optional(db).await
+}
+
 pub async fn upcoming(db: &SqlitePool, channel_id: i64, after_ms: i64, limit: i64) -> sqlx::Result<Vec<ProgramInfo>> {
     sqlx::query_as(&format!("{SELECT} WHERE p.channel_id = ? AND p.start_ms >= ? ORDER BY p.start_ms LIMIT ?"))
         .bind(channel_id)

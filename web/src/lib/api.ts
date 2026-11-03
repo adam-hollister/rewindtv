@@ -219,6 +219,8 @@ export const api = {
   rebuildAll: () => req<null>('POST', '/api/channels/rebuild'),
 
   guide: (user: number | undefined, from?: number, hours?: number) => req<Guide>('GET', '/api/guide' + q({ user, from, hours })),
+  replay: (programId: number) =>
+    req<{ url: string; session: string; offset: number; duration: number; kept: [number, number][]; channel_id: number; program: Program }>('POST', `/api/programs/${programId}/play`),
   tune: (id: number, previous?: string | null) => req<Tune>('POST', `/api/channels/${id}/tune`, { previous: previous ?? null }),
   stopSession: (sid: string) => fetch(`/api/sessions/${sid}`, { method: 'DELETE', keepalive: true }),
 };
