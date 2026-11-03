@@ -74,6 +74,9 @@ pub struct Rule {
     pub year_max: Option<i64>,
     pub include_items: Vec<i64>,
     pub exclude_items: Vec<i64>,
+    /// Words that must appear in the episode or show title (any of them),
+    /// e.g. "halloween" for a holiday block.
+    pub keywords: Vec<String>,
 }
 
 fn any_eq(wanted: &[String], have: &[String]) -> bool {
@@ -110,9 +113,20 @@ impl Rule {
             && (self.ratings.is_empty() || opt_eq(&self.ratings, &it.content_rating))
             && self.year_min.is_none_or(|min| it.year.is_some_and(|y| y >= min))
             && self.year_max.is_none_or(|max| it.year.is_some_and(|y| y <= max))
+            && (self.keywords.is_empty() || self.keywords_match(it))
     }
 
     /// True when the rule is just a hand-picked list of items.
+    fn keywords_match(&self, it: &Item) -> bool {
+        let title = it.title.to_lowercase();
+        let show = it.show_title.as_deref().unwrap_or_default().to_lowercase();
+        self.keywords
+            .iter()
+            .map(|k| k.trim().to_lowercase())
+            .filter(|k| !k.is_empty())
+            .any(|k| title.contains(&k) || show.contains(&k))
+    }
+
     fn is_only_items(&self) -> bool {
         self.libraries.is_empty()
             && self.kinds.is_empty()
@@ -124,6 +138,7 @@ impl Rule {
             && self.ratings.is_empty()
             && self.year_min.is_none()
             && self.year_max.is_none()
+            && self.keywords.is_empty()
     }
 }
 
@@ -162,6 +177,19 @@ mod tests {
         assert!(r.matches(&ep(&["Comedy", "Family"], "TV-PG", 1994)));
         assert!(!r.matches(&ep(&["Comedy"], "TV-PG", 2004)));
         assert!(!r.matches(&ep(&["Drama"], "TV-PG", 1994)));
+    }
+
+    #[test]
+    fn keywords_match_episode_or_show_titles() {
+        let r = Rule { keywords: vec!["Halloween".into(), "haunted".into()], ..Default::default() };
+        let mut it = ep(&[], "TV-PG", 1990);
+        it.title = "Treehouse of Horror: A Halloween Special".into();
+        assert!(r.matches(&it));
+        it.title = "Pilot".into();
+        it.show_title = Some("The Haunted Hathaways".into());
+        assert!(r.matches(&it));
+        it.show_title = Some("Cheers".into());
+        assert!(!r.matches(&it));
     }
 
     #[test]

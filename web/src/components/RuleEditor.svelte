@@ -89,6 +89,13 @@
     </div>
   {/if}
 
+  <div class="sec">
+    <h4>Title keywords <span class="dim">— any of, in episode or show titles</span></h4>
+    <input class="kw" type="text" placeholder="e.g. halloween, haunted, ghost"
+      value={(rule.keywords ?? []).join(', ')}
+      onchange={(e) => (rule.keywords = e.currentTarget.value.split(',').map((k) => k.trim()).filter(Boolean))} />
+  </div>
+
   <button type="button" class="btn small ghost more" onclick={() => (more = !more)}>{more ? '− Fewer filters' : '+ More filters'} <span class="dim">collections, networks, ratings, libraries</span></button>
 
   {#if more}
@@ -123,4 +130,5 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .years input { max-width: 130px; height: 36px; }
   .more { justify-self: start; }
+  .kw { max-width: 420px; height: 38px; }
 </style>

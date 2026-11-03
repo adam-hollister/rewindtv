@@ -102,15 +102,15 @@ pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Opt
     else {
         return Ok(None);
     };
-    let slots = sqlx::query_as::<_, (i64, String, i64, i64, i64, String, String)>(
-        "SELECT id, title, days, start_min, end_min, rule, ordering FROM channel_slots
+    let slots = sqlx::query_as::<_, (i64, String, i64, i64, i64, String, String, Option<String>, Option<String>)>(
+        "SELECT id, title, days, start_min, end_min, rule, ordering, date_from, date_to FROM channel_slots
          WHERE channel_id = ? ORDER BY start_min, id",
     )
     .bind(channel_id)
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|(id, title, days, start, end, rule, ordering)| Slot {
+    .map(|(id, title, days, start, end, rule, ordering, date_from, date_to)| Slot {
         id,
         title,
         days: days as u8,
@@ -118,6 +118,7 @@ pub async fn load_config(db: &SqlitePool, channel_id: i64) -> anyhow::Result<Opt
         end_min: end as u32,
         rule: serde_json::from_str(&rule).unwrap_or_default(),
         ordering: Ordering::parse(&ordering),
+        dates: date_from.as_deref().and_then(super::slots::parse_md).zip(date_to.as_deref().and_then(super::slots::parse_md)),
     })
     .collect();
     Ok(Some(ChannelConfig {

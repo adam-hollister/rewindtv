@@ -333,6 +333,7 @@ mod tests {
             end_min: 12 * 60,
             rule: Rule { genres: vec!["Animation".into()], ..Default::default() },
             ordering: Ordering::Episodic,
+            dates: None,
         };
         let mut c = cfg(0, vec![cartoons]);
         c.rule = Rule { genres: vec!["Action".into(), "Comedy".into()], ..Default::default() };

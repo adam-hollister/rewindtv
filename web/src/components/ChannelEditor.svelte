@@ -76,6 +76,28 @@
     openSlot = ch.slots.length - 1;
   }
 
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmtDate = (md: string) => {
+    const [m, d] = md.split('-').map(Number);
+    return `${MONTHS[m - 1] ?? '?'} ${d}`;
+  };
+  const md = (m: number, d: number) => `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const part = (v: string | null | undefined, i: 0 | 1, dflt: number) => Number((v ?? '').split('-')[i]) || dflt;
+
+  // Holiday specials: all day, every day, in their dates, playing matching episodes.
+  const HOLIDAYS: { label: string; title: string; from: string; to: string; keywords: string[] }[] = [
+    { label: '🎃 Halloween', title: 'Halloween Specials', from: '10-01', to: '10-31', keywords: ['halloween', 'haunted', 'ghost', 'witch', 'pumpkin', 'monster', 'treehouse of horror'] },
+    { label: '🦃 Thanksgiving', title: 'Thanksgiving', from: '11-20', to: '11-30', keywords: ['thanksgiving', 'turkey', 'pilgrim'] },
+    { label: '🎄 Christmas', title: 'Christmas Specials', from: '12-01', to: '12-26', keywords: ['christmas', 'xmas', 'santa', 'holiday', 'snow', 'noel'] },
+    { label: '🎆 New Year', title: "New Year's", from: '12-30', to: '01-01', keywords: ['new year'] },
+    { label: '❤️ Valentine\'s', title: "Valentine's Day", from: '02-07', to: '02-14', keywords: ['valentine', 'love', 'date night'] },
+  ];
+
+  function addHoliday(h: (typeof HOLIDAYS)[number]) {
+    ch.slots.push({ title: h.title, days: 127, start_min: 0, end_min: 0, rule: { ...emptyRule(), keywords: [...h.keywords] }, ordering: 'shuffle', date_from: h.from, date_to: h.to });
+    openSlot = ch.slots.length - 1;
+  }
+
   function addPreset(title: string, days: number, start: number, end: number, ordering: Ordering) {
     ch.slots.push({ title, days, start_min: start, end_min: end, rule: emptyRule(), ordering });
     openSlot = ch.slots.length - 1;
@@ -252,7 +274,14 @@
               <button type="button" class="chip" onclick={() => addPreset('After School', 31, 15 * 60, 18 * 60, 'block')}>🎒 After school</button>
               <button type="button" class="chip" onclick={() => addPreset('Late Night Movies', 127, 23 * 60, 3 * 60, 'shuffle')}>🎬 Late-night movies</button>
             </div>
-          {:else}
+          {/if}
+          <div class="presets holidays">
+            <span class="small muted">Specials every year:</span>
+            {#each HOLIDAYS as h}
+              <button type="button" class="chip" onclick={() => addHoliday(h)}>{h.label}</button>
+            {/each}
+          </div>
+          {#if ch.slots.length > 0}
             <WeekTimeline slots={ch.slots} colors={COLORS} onpick={(i) => (openSlot = i)} />
             <div class="slots">
               {#each ch.slots as s, i}
@@ -260,7 +289,7 @@
                   <button type="button" class="slot-head" onclick={() => (openSlot = openSlot === i ? null : i)}>
                     <i class="dot"></i>
                     <strong>{s.title}</strong>
-                    <span class="muted small">{daysLabel(s.days)} · {minToTime(s.start_min)}–{minToTime(s.end_min)}</span>
+                    <span class="muted small">{#if s.date_from && s.date_to}{fmtDate(s.date_from)}–{fmtDate(s.date_to)} · {/if}{daysLabel(s.days)} · {s.start_min === s.end_min ? 'all day' : `${minToTime(s.start_min)}–${minToTime(s.end_min)}`}</span>
                     <span class="spacer"></span>
                     <span class="dim">{openSlot === i ? '▲' : '▼'}</span>
                   </button>
@@ -275,6 +304,24 @@
                         {#each DAYS as d, di}
                           <button type="button" class="chip" class:on={s.days & (1 << di)} onclick={() => toggleDay(s, di)}>{d}</button>
                         {/each}
+                      </div>
+                      <div class="dates">
+                        <div class="segmented">
+                          <button type="button" class:on={!s.date_from} onclick={() => { s.date_from = null; s.date_to = null; }}>All year</button>
+                          <button type="button" class:on={!!s.date_from} onclick={() => { s.date_from ??= '10-01'; s.date_to ??= '10-31'; }}>Only between dates</button>
+                        </div>
+                        {#if s.date_from}
+                          <select value={part(s.date_from, 0, 1)} onchange={(e) => (s.date_from = md(+e.currentTarget.value, part(s.date_from, 1, 1)))}>
+                            {#each MONTHS as m, i}<option value={i + 1}>{m}</option>{/each}
+                          </select>
+                          <input type="number" min="1" max="31" value={part(s.date_from, 1, 1)} onchange={(e) => (s.date_from = md(part(s.date_from, 0, 1), +e.currentTarget.value || 1))} />
+                          <span class="dim">to</span>
+                          <select value={part(s.date_to, 0, 1)} onchange={(e) => (s.date_to = md(+e.currentTarget.value, part(s.date_to, 1, 1)))}>
+                            {#each MONTHS as m, i}<option value={i + 1}>{m}</option>{/each}
+                          </select>
+                          <input type="number" min="1" max="31" value={part(s.date_to, 1, 1)} onchange={(e) => (s.date_to = md(part(s.date_to, 0, 1), +e.currentTarget.value || 1))} />
+                          <span class="tiny dim">every year · beats regular blocks</span>
+                        {/if}
                       </div>
                       <div class="segmented">
                         {#each ORDERINGS as o}<button type="button" class:on={s.ordering === o.v} onclick={() => (s.ordering = o.v)}>{o.title}</button>{/each}
@@ -357,6 +404,10 @@
   .coverage { margin-top: 14px; display: grid; gap: 10px; }
   .warn-note { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgb(245 165 36 / 0.08); border: 1px solid rgb(245 165 36 / 0.35); }
   .cov-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center; font-size: 14px; }
+  .holidays { margin-top: 12px; align-items: center; }
+  .dates { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .dates select { width: auto; height: 36px; }
+  .dates input[type='number'] { width: 70px; height: 36px; }
   .presets, .days { display: flex; gap: 8px; flex-wrap: wrap; }
   .slots { display: grid; gap: 8px; margin-top: 16px; }
   .slot { border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); }

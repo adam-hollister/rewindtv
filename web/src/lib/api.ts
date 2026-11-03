@@ -13,11 +13,12 @@ export interface Rule {
   year_max: number | null;
   include_items: number[];
   exclude_items: number[];
+  keywords: string[];
 }
 
 export const emptyRule = (): Rule => ({
   libraries: [], kinds: [], genres: [], exclude_genres: [], collections: [], shows: [],
-  studios: [], ratings: [], year_min: null, year_max: null, include_items: [], exclude_items: [],
+  studios: [], ratings: [], year_min: null, year_max: null, include_items: [], exclude_items: [], keywords: [],
 });
 
 export interface User { id: number; name: string; color: string; is_admin: boolean }
@@ -65,6 +66,9 @@ export interface Slot {
   end_min: number;
   rule: Rule;
   ordering: Ordering;
+  /** Optional yearly date range, "MM-DD". */
+  date_from?: string | null;
+  date_to?: string | null;
 }
 
 export interface Channel {

@@ -77,6 +77,19 @@ pub struct SlotIo {
     #[serde(default)]
     rule: Rule,
     ordering: Ordering,
+    /// Optional yearly date range, "MM-DD".
+    #[serde(default)]
+    date_from: Option<String>,
+    #[serde(default)]
+    date_to: Option<String>,
+}
+
+fn md(s: &Option<String>) -> Option<(u32, u32)> {
+    s.as_deref().and_then(crate::schedule::slots::parse_md)
+}
+
+fn fmt_md((m, d): (u32, u32)) -> String {
+    format!("{m:02}-{d:02}")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,7 +186,17 @@ pub async fn get(State(st): State<AppState>, Path(id): Path<i64>) -> ApiResult<J
         slots: cfg
             .slots
             .into_iter()
-            .map(|s| SlotIo { id: Some(s.id), title: s.title, days: s.days, start_min: s.start_min, end_min: s.end_min, rule: s.rule, ordering: s.ordering })
+            .map(|s| SlotIo {
+                id: Some(s.id),
+                title: s.title,
+                days: s.days,
+                start_min: s.start_min,
+                end_min: s.end_min,
+                rule: s.rule,
+                ordering: s.ordering,
+                date_from: s.dates.map(|d| fmt_md(d.0)),
+                date_to: s.dates.map(|d| fmt_md(d.1)),
+            })
             .collect(),
     }))
 }
@@ -185,6 +208,10 @@ fn validate(c: &ChannelIo) -> ApiResult<()> {
     for s in &c.slots {
         if s.start_min >= 1440 || s.end_min > 1440 || s.days == 0 {
             return Err(ApiError::BadRequest(format!("Block \"{}\" has invalid times or no days", s.title)));
+        }
+        let given = |v: &Option<String>| v.as_deref().is_some_and(|x| !x.trim().is_empty());
+        if (given(&s.date_from) || given(&s.date_to)) && (md(&s.date_from).is_none() || md(&s.date_to).is_none()) {
+            return Err(ApiError::BadRequest(format!("Block \"{}\" needs a valid start and end date", s.title)));
         }
     }
     Ok(())
@@ -199,7 +226,8 @@ async fn save_slots(tx: &mut sqlx::SqliteConnection, channel_id: i64, slots: &[S
     sqlx::query("DELETE FROM channel_slots WHERE channel_id = ?").bind(channel_id).execute(&mut *tx).await?;
     for s in slots {
         sqlx::query(
-            "INSERT INTO channel_slots (id, channel_id, title, days, start_min, end_min, rule, ordering) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO channel_slots (id, channel_id, title, days, start_min, end_min, rule, ordering, date_from, date_to)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(s.id)
         .bind(channel_id)
@@ -209,6 +237,8 @@ async fn save_slots(tx: &mut sqlx::SqliteConnection, channel_id: i64, slots: &[S
         .bind((s.end_min % 1440) as i64)
         .bind(serde_json::to_string(&s.rule)?)
         .bind(ordering_str(s.ordering))
+        .bind(md(&s.date_from).map(fmt_md))
+        .bind(md(&s.date_to).map(fmt_md))
         .execute(&mut *tx)
         .await?;
     }
@@ -368,6 +398,7 @@ pub async fn preview(State(st): State<AppState>, Json(c): Json<ChannelIo>) -> Ap
             end_min: s.end_min % 1440,
             rule: s.rule.clone(),
             ordering: s.ordering,
+            dates: md(&s.date_from).zip(md(&s.date_to)),
         })
         .collect();
     let cfg = ChannelConfig {

@@ -38,6 +38,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
 - **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
 - **Skip intros and credits per channel.** Uses Plex's markers, markers you set (per season or episode), and RewindTV's own audio-based detection. Markers are saved per show in their own folder and apply on every server.
+- **Holiday specials.** Blocks can run only between dates every year (Halloween all October, Christmas in December) and pick episodes by title keywords.
 - **Commercials & station IDs.** Mark a library as commercials or station IDs and channels can fill the gaps between shows with real old ads and bumpers. Guides still read like TV listings.
 - **Channel logos.** Upload one or pick artwork from the channel's shows; it shows in RewindTV and in Plex's Live TV guide.
 - **Backup & restore.** One file with everything you set up, plus automatic nightly backups; restoring onto a fresh install brings it all back.
