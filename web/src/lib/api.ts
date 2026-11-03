@@ -137,6 +137,8 @@ export interface DiagnoseCheck { name: string; ok: boolean; detail: string; ms: 
 export interface DiagnoseReport { source: string; kind: string; item: string | null; ok: boolean; checks: DiagnoseCheck[] }
 export interface ArtChoice { title: string; source_id: number; poster: string | null; backdrop: string | null; poster_url: string | null; backdrop_url: string | null }
 export interface BackupFile { name: string; bytes: number; modified: number; automatic: boolean }
+export interface SearchHit { program_id: number; channel_id: number; channel_number: number; channel_name: string; channel_color: string; channel_logo: string | null; start: number; end: number; title: string; subtitle: string | null; thumb: string | null }
+export interface Reminder { program_id: number; channel_id: number; start_ms: number; title: string }
 export interface Status { version: string; timezone: string; sources: number; items: number; channels: number; users: number; sessions: number }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -153,6 +155,8 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+const q_ = (o: Record<string, unknown>) =>
+  '?' + Object.entries(o).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
 const q = (o: Record<string, unknown>) =>
   '?' + Object.entries(o).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
 
@@ -221,6 +225,10 @@ export const api = {
   guide: (user: number | undefined, from?: number, hours?: number) => req<Guide>('GET', '/api/guide' + q({ user, from, hours })),
   replay: (programId: number) =>
     req<{ url: string; session: string; offset: number; duration: number; kept: [number, number][]; channel_id: number; program: Program }>('POST', `/api/programs/${programId}/play`),
+  search: (q: string, user?: number) => req<SearchHit[]>('GET', '/api/guide/search' + q_({ q, user })),
+  reminders: (user: number) => req<Reminder[]>('GET', `/api/reminders?user=${user}`),
+  addReminder: (user_id: number, program_id: number) => req<null>('POST', '/api/reminders', { user_id, program_id }),
+  removeReminder: (user: number, program: number) => req<null>('DELETE', `/api/reminders/${user}/${program}`),
   tune: (id: number, previous?: string | null) => req<Tune>('POST', `/api/channels/${id}/tune`, { previous: previous ?? null }),
   stopSession: (sid: string) => fetch(`/api/sessions/${sid}`, { method: 'DELETE', keepalive: true }),
 };

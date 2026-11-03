@@ -109,6 +109,7 @@ fn spawn_background(state: AppState) {
                     continue;
                 }
             };
+            api::search::prune(&st.db).await;
             if let Err(e) = schedule::store::extend_all(&st.db, &items, st.cfg.tz, db::now_ms()).await {
                 tracing::warn!("guide refresh: {e:#}");
             }

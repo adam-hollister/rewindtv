@@ -6,6 +6,7 @@ mod logos;
 mod markers;
 mod media;
 mod plex;
+pub mod search;
 mod sources;
 mod users;
 
@@ -80,6 +81,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/programs/{id}/play", post(media::replay))
         .route("/api/sessions/{sid}", axum::routing::delete(media::stop_session))
         .route("/api/guide", get(channels::guide))
+        .route("/api/guide/search", get(search::search))
+        .route("/api/reminders", get(search::list).post(search::add))
+        .route("/api/reminders/{user}/{program}", axum::routing::delete(search::remove))
         .route("/api/img/{source}", get(media::image))
         .route("/stream/{sid}/{rest}", get(hls::proxy))
         .route("/iptv/{user}/playlist.m3u", get(iptv::playlist))

@@ -4,6 +4,8 @@
   import { session, go, clockState, toast } from '../lib/state.svelte';
   import { clock, range, MIN, progress, minutesLeft, duration } from '../lib/time';
   import ChannelBadge from './ChannelBadge.svelte';
+  import GuideSearch from './GuideSearch.svelte';
+  import { hasReminder, toggleReminder, reminders } from '../lib/state.svelte';
 
   const HOURS = 24;
   const CH_W_DESKTOP = 210;
@@ -185,6 +187,11 @@
             <div class="prog"><div class="bar"><i style:width="{progress(sel.p, now) * 100}%"></i></div><span class="small muted">{minutesLeft(sel.p.end, now)}</span></div>
           {:else if sel.p.start > now}
             <span class="muted small">Starts at {clock(sel.p.start)}</span>
+            {#if !sel.p.filler}
+              {#key reminders.list}
+                <button class="btn" onclick={() => toggleReminder(sel.p.id)}>{hasReminder(sel.p.id) ? '🔔 Reminder set' : '🔔 Remind me'}</button>
+              {/key}
+            {/if}
           {/if}
         </div>
       </div>
@@ -206,6 +213,7 @@
     <button class:on={!onlyFav} onclick={() => (onlyFav = false)}>All<span class="wide">&nbsp;channels</span></button>
     <button class:on={onlyFav} onclick={() => (onlyFav = true)}>★<span class="wide">&nbsp;Favorites</span></button>
   </div>
+  <GuideSearch />
   <div class="spacer"></div>
   <button class="btn small" onclick={scrollNow}>Now</button>
   <div class="segmented zoom" aria-label="Zoom">

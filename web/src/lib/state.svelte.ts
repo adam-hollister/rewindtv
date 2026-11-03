@@ -1,4 +1,4 @@
-import { api, type User } from './api';
+import { api, type Reminder, type User } from './api';
 
 const USER_KEY = 'rewindtv.user';
 
@@ -63,3 +63,23 @@ export function toast(text: string, kind: 'ok' | 'err' = 'ok') {
 // Shared clock that ticks every 15s, for "now" lines and progress bars.
 export const clockState = $state({ now: Date.now() });
 setInterval(() => (clockState.now = Date.now()), 15_000);
+
+// --- Reminders (per profile) ------------------------------------------------
+
+export const reminders = $state({ list: [] as Reminder[] });
+
+export async function refreshReminders() {
+  if (session.userId === null) return;
+  reminders.list = await api.reminders(session.userId).catch(() => reminders.list);
+}
+
+export function hasReminder(programId: number) {
+  return reminders.list.some((r) => r.program_id === programId);
+}
+
+export async function toggleReminder(programId: number) {
+  if (session.userId === null) return;
+  if (hasReminder(programId)) await api.removeReminder(session.userId, programId);
+  else await api.addReminder(session.userId, programId);
+  await refreshReminders();
+}

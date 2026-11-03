@@ -11,6 +11,7 @@
   import Settings from './components/Settings.svelte';
   import ShowMarkers from './components/ShowMarkers.svelte';
   import Replay from './components/Replay.svelte';
+  import ReminderBanner from './components/ReminderBanner.svelte';
 
   onMount(() => {
     installSpatialNav();
@@ -49,6 +50,10 @@
   {:else}
     <Guide />
   {/if}
+{/if}
+
+{#if session.loaded && session.userId !== null}
+  <ReminderBanner />
 {/if}
 
 <div class="toasts" aria-live="polite">
