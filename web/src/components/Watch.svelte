@@ -7,6 +7,7 @@
   import { clock, range, progress, minutesLeft } from '../lib/time';
   import ChannelBadge from './ChannelBadge.svelte';
   import Static from './Static.svelte';
+  import { tvRemote, startTvRemote } from '../lib/remote.svelte';
 
   let { channelId }: { channelId: number } = $props();
 
@@ -240,6 +241,10 @@
       case 'f':
         toggleFullscreen();
         break;
+      case 'r':
+        tvRemote.card = !tvRemote.card;
+        poke();
+        break;
       case 'Escape':
       case 'Backspace':
       case 'BrowserBack':
@@ -277,6 +282,7 @@
     setTimeout(() => (showStatic = false), 450);
     poke(6000);
     start(null);
+    startTvRemote();
     try {
       const cur = sessionStorage.getItem('rewindtv.current');
       if (cur && Number(cur) !== channelId) sessionStorage.setItem('rewindtv.last', cur);
@@ -349,6 +355,16 @@
     <div class="osd-num entry">{digits}<span>_</span></div>
   {/if}
 
+  {#if tvRemote.card && tvRemote.code}
+    <div class="pair" role="presentation" onclick={(e) => { e.stopPropagation(); tvRemote.card = false; }}>
+      <div class="slate-kicker">USE YOUR PHONE AS A REMOTE</div>
+      <div class="pair-step">On your phone, open</div>
+      <div class="pair-url">{location.host}/#/remote</div>
+      <div class="pair-step">and enter</div>
+      <div class="pair-code">{tvRemote.code}</div>
+    </div>
+  {/if}
+
   {#if needsTap}
     <button class="btn primary unmute" onclick={(e) => { e.stopPropagation(); unmute(); }}>🔊 Tap for sound</button>
   {/if}
@@ -366,6 +382,9 @@
   <div class="top" class:on={overlay}>
     <button class="btn ghost" onclick={(e) => { e.stopPropagation(); go('guide'); }}>← Guide</button>
     <div class="spacer"></div>
+    {#if tvRemote.code}
+      <button class="btn ghost small remote-chip" onclick={(e) => { e.stopPropagation(); tvRemote.card = !tvRemote.card; }} title="Use your phone as a remote (R)">📱 Remote {tvRemote.code}</button>
+    {/if}
     <span class="clock">{clock(now)}</span>
   </div>
 
@@ -432,6 +451,11 @@
 
   .top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: linear-gradient(180deg, rgb(0 0 0 / 0.7), transparent); opacity: 0; transition: opacity 0.3s; }
   .top.on { opacity: 1; }
+  .remote-chip { font-variant-numeric: tabular-nums; }
+  .pair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 32px 44px; border-radius: 24px; text-align: center; background: rgb(12 14 20 / 0.92); border: 1px solid var(--line-2); box-shadow: var(--shadow); display: grid; gap: 8px; z-index: 5; }
+  .pair-step { color: var(--muted); }
+  .pair-url { font-size: 24px; font-weight: 700; }
+  .pair-code { font-family: var(--display); font-size: 72px; letter-spacing: 0.18em; color: var(--accent); line-height: 1.1; }
   .spacer { flex: 1; }
   .clock { font-weight: 750; font-size: 18px; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px #000; margin-right: 110px; }
 

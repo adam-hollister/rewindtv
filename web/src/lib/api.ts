@@ -215,6 +215,10 @@ export const api = {
   autogen: (channels: { name: string; rule: Rule; ordering: Ordering }[], owner_user_id: number | null) =>
     req<number[]>('POST', '/api/autogen', { channels, owner_user_id }),
 
+  remotePair: (code: string | null) => req<{ code: string }>('POST', '/api/remote', { code }),
+  remoteStatus: (code: string) => req<{ connected: boolean }>('GET', `/api/remote/${encodeURIComponent(code)}`),
+  remoteSend: (code: string, command: import('./remote.svelte').RemoteCommand) =>
+    req<{ connected: boolean }>('POST', `/api/remote/${encodeURIComponent(code)}/command`, command),
   channels: (user?: number) => req<ChannelListItem[]>('GET', '/api/channels' + q({ user })),
   channel: (id: number) => req<Channel>('GET', `/api/channels/${id}`),
   createChannel: (c: Channel) => req<{ id: number }>('POST', '/api/channels', c),

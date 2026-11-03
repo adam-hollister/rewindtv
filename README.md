@@ -38,6 +38,7 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 - **Watch in Plex.** RewindTV acts as an HDHomeRun tuner, so your channels appear in Plex's Live TV guide on every Plex app. Your Plex server converts every show to the same format, so mixed libraries flip between shows without hiccups.
 - **Watch anywhere else.** Every profile gets an M3U playlist and an XMLTV guide for **Jellyfin Live TV**, TiviMate, VLC and similar apps.
 - **Skip intros and credits per channel.** Uses Plex's markers, markers you set (per season or episode), and RewindTV's own audio-based detection. Markers are saved per show in their own folder and apply on every server.
+- **Phone as a remote.** Pair a phone with a 4-digit code and flip channels, punch in numbers or pick from "What's on".
 - **Playlist channels.** Video playlists from Plex or Jellyfin show up in the channel editor (and in Auto-create); "Playlist order" plays them straight through, then loops.
 - **Guide search & reminders.** Search the next week of every channel; tap 🔔 to get a heads-up a minute before it starts (TV mode switches over by itself).
 - **Start over & catch-up.** Restart the show you tuned into mid-way (`S` in TV mode), or watch anything that aired in the last day from the guide — with seek and pause, intros/credits still skipped.
@@ -147,11 +148,16 @@ For Jellyfin: **Dashboard → Live TV → Tuner devices → +** (M3U Tuner), the
 | G | Channel list |
 | L | Last channel |
 | S | Start the current show over |
+| R | Show the code for using your phone as a remote |
 | ← / → / I / Enter | Show info banner |
 | M / F | Mute / fullscreen |
 | Esc / Backspace | Back to the guide |
 
 In the guide, arrows move between programs, Enter tunes in, and typing a number jumps straight to that channel.
+
+### Phone as a remote
+
+On the TV, open any channel and press **R** (or tap **📱 Remote** at the top). On your phone, open `http://<truenas-ip>:8420/#/remote` and type the 4-digit code. You get channel up/down, a number pad, last channel, start over, mute, and a "What's on" list to tune straight to a channel. Bookmark that page; the phone remembers the code, and the TV keeps it while the tab stays open.
 
 ## Configuration
 

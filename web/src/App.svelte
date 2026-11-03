@@ -12,6 +12,7 @@
   import ShowMarkers from './components/ShowMarkers.svelte';
   import Replay from './components/Replay.svelte';
   import ReminderBanner from './components/ReminderBanner.svelte';
+  import Remote from './components/Remote.svelte';
 
   onMount(() => {
     installSpatialNav();
@@ -21,7 +22,9 @@
   const page = $derived(route.parts[0] ?? 'guide');
 </script>
 
-{#if !session.loaded}
+{#if page === 'remote'}
+  <Remote />
+{:else if !session.loaded}
   <div class="boot"><span class="logo">REWIND<b>TV</b></span></div>
 {:else if session.userId === null || page === 'profiles'}
   <ProfilePicker />
@@ -52,7 +55,7 @@
   {/if}
 {/if}
 
-{#if session.loaded && session.userId !== null}
+{#if session.loaded && session.userId !== null && page !== 'remote'}
   <ReminderBanner />
 {/if}
 

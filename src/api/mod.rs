@@ -6,6 +6,7 @@ mod logos;
 mod markers;
 mod media;
 mod plex;
+mod remote;
 pub mod search;
 mod sources;
 mod users;
@@ -83,6 +84,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/guide", get(channels::guide))
         .route("/api/guide/search", get(search::search))
         .route("/api/reminders", get(search::list).post(search::add))
+        .route("/api/remote", post(remote::pair))
+        .route("/api/remote/{code}", get(remote::status))
+        .route("/api/remote/{code}/events", get(remote::events))
+        .route("/api/remote/{code}/command", post(remote::command))
         .route("/api/reminders/{user}/{program}", axum::routing::delete(search::remove))
         .route("/api/img/{source}", get(media::image))
         .route("/stream/{sid}/{rest}", get(hls::proxy))
