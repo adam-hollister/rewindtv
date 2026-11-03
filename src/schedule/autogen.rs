@@ -9,7 +9,7 @@ use super::rule::{Item, Rule};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Suggestion {
-    /// "genre", "collection", "decade", "show", "studio"
+    /// "playlist", "genre", "collection", "decade", "show", "studio"
     pub kind: &'static str,
     pub name: String,
     pub rule: Rule,
@@ -39,6 +39,7 @@ pub fn suggest(items: &[Item]) -> Vec<Suggestion> {
     let mut collections = HashMap::new();
     let mut decades = HashMap::new();
     let mut studios = HashMap::new();
+    let mut playlists = HashMap::new();
     let mut shows: HashMap<String, (String, Tally)> = HashMap::new();
     for it in items {
         for g in &it.genres {
@@ -46,6 +47,9 @@ pub fn suggest(items: &[Item]) -> Vec<Suggestion> {
         }
         for c in &it.collections {
             add(&mut collections, c, it);
+        }
+        for (p, _) in &it.playlists {
+            add(&mut playlists, p, it);
         }
         if let Some(y) = it.year {
             add(&mut decades, &(y / 10 * 10).to_string(), it);
@@ -64,11 +68,15 @@ pub fn suggest(items: &[Item]) -> Vec<Suggestion> {
     let hours = |t: &Tally| t.ms as f64 / 3_600_000.0;
     let mut out = Vec::new();
     let mut push = |kind: &'static str, name: String, rule: Rule, ordering: Ordering, t: &Tally| {
-        if hours(t) >= MIN_HOURS {
+        // Playlists were made by hand, so any length is worth offering.
+        if hours(t) >= MIN_HOURS || (kind == "playlist" && t.items >= 2) {
             out.push(Suggestion { kind, name, rule, ordering, items: t.items, hours: (hours(t) * 10.0).round() / 10.0 });
         }
     };
 
+    for (p, t) in sorted(&playlists) {
+        push("playlist", p.clone(), Rule { playlists: vec![p.clone()], ..Default::default() }, Ordering::Playlist, t);
+    }
     for (g, t) in sorted(&genres) {
         push("genre", g.clone(), Rule { genres: vec![g.clone()], ..Default::default() }, Ordering::Shuffle, t);
     }
@@ -122,5 +130,13 @@ mod tests {
         assert!(s.iter().any(|s| s.kind == "decade" && s.name == "The 80s" && s.rule.year_min == Some(1980)));
         assert!(s.iter().any(|s| s.kind == "show" && s.name == "Cheers 24/7" && s.ordering == Ordering::Marathon));
         assert!(suggest(&items[..5]).is_empty(), "too little content");
+
+        let mut short = items[..3].to_vec();
+        for it in &mut short {
+            it.playlists = vec![("Friday Mix".into(), it.id)];
+        }
+        let s = suggest(&short);
+        assert_eq!(s.len(), 1, "only the playlist, however short");
+        assert_eq!((s[0].kind, s[0].ordering), ("playlist", Ordering::Playlist));
     }
 }

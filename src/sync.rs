@@ -116,7 +116,46 @@ pub async fn sync_source(db: &SqlitePool, source_id: i64, src: &Source) -> anyho
         total += items.len();
         listed_markers.extend(items.into_iter().filter_map(|it| Some((it.item_key, it.markers?))));
     }
+    // Playlists are a bonus: a server that can't list them still syncs.
+    match sync_playlists(db, source_id, src).await {
+        Ok(n) if n > 0 => tracing::info!("synced {n} playlists"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("playlists: {e:#}"),
+    }
     Ok((total, listed_markers))
+}
+
+/// Mirror the server's video playlists. Playlists the server no longer has
+/// are dropped.
+pub async fn sync_playlists(db: &SqlitePool, source_id: i64, src: &Source) -> anyhow::Result<usize> {
+    let lists = src.playlists().await?;
+    let run = now_ms();
+    let mut tx = db.begin().await?;
+    for p in &lists {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO playlists (source_id, key, title, synced_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(source_id, key) DO UPDATE SET title = excluded.title, synced_at = excluded.synced_at
+             RETURNING id",
+        )
+        .bind(source_id)
+        .bind(&p.key)
+        .bind(&p.title)
+        .bind(run)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("DELETE FROM playlist_items WHERE playlist_id = ?").bind(id).execute(&mut *tx).await?;
+        for (pos, key) in p.items.iter().enumerate() {
+            sqlx::query("INSERT INTO playlist_items (playlist_id, position, item_key) VALUES (?, ?, ?)")
+                .bind(id)
+                .bind(pos as i64)
+                .bind(key)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    sqlx::query("DELETE FROM playlists WHERE source_id = ? AND synced_at < ?").bind(source_id).bind(run).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(lists.len())
 }
 
 /// Re-check items without server markers this often (Plex detects markers

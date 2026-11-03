@@ -19,6 +19,8 @@ pub struct Item {
     pub studio: Option<String>,
     pub genres: Vec<String>,
     pub collections: Vec<String>,
+    /// Playlists the item is on, with its position in each.
+    pub playlists: Vec<(String, i64)>,
     /// Intro/credits markers, already filtered to the enabled sources.
     pub markers: Vec<super::cuts::Marker>,
     /// What the item's library is for.
@@ -77,6 +79,8 @@ pub struct Rule {
     /// Words that must appear in the episode or show title (any of them),
     /// e.g. "halloween" for a holiday block.
     pub keywords: Vec<String>,
+    /// Server playlists by name.
+    pub playlists: Vec<String>,
 }
 
 fn any_eq(wanted: &[String], have: &[String]) -> bool {
@@ -114,6 +118,7 @@ impl Rule {
             && self.year_min.is_none_or(|min| it.year.is_some_and(|y| y >= min))
             && self.year_max.is_none_or(|max| it.year.is_some_and(|y| y <= max))
             && (self.keywords.is_empty() || self.keywords_match(it))
+            && (self.playlists.is_empty() || self.playlists.iter().any(|w| it.playlists.iter().any(|(p, _)| p.eq_ignore_ascii_case(w))))
     }
 
     /// True when the rule is just a hand-picked list of items.
@@ -139,6 +144,7 @@ impl Rule {
             && self.year_min.is_none()
             && self.year_max.is_none()
             && self.keywords.is_empty()
+            && self.playlists.is_empty()
     }
 }
 

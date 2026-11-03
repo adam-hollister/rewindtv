@@ -34,6 +34,7 @@ pub struct Facets {
     libraries: Vec<Lib>,
     genres: Vec<Count>,
     collections: Vec<Count>,
+    playlists: Vec<Count>,
     studios: Vec<Count>,
     ratings: Vec<Count>,
     shows: Vec<Show>,
@@ -51,6 +52,7 @@ fn counts(map: HashMap<String, usize>) -> Vec<Count> {
 pub async fn facets(State(st): State<AppState>) -> ApiResult<Json<Facets>> {
     let items = st.items().await?;
     let (mut genres, mut collections, mut studios, mut ratings) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+    let mut playlists = HashMap::new();
     let mut shows: BTreeMap<String, (String, usize)> = BTreeMap::new();
     for it in items.iter().filter(|i| i.role == crate::schedule::rule::Role::Content) {
         for g in &it.genres {
@@ -58,6 +60,9 @@ pub async fn facets(State(st): State<AppState>) -> ApiResult<Json<Facets>> {
         }
         for c in &it.collections {
             *collections.entry(c.clone()).or_insert(0) += 1;
+        }
+        for (p, _) in &it.playlists {
+            *playlists.entry(p.clone()).or_insert(0) += 1;
         }
         if let Some(s) = &it.studio {
             *studios.entry(s.clone()).or_insert(0) += 1;
@@ -83,6 +88,11 @@ pub async fn facets(State(st): State<AppState>) -> ApiResult<Json<Facets>> {
         libraries,
         genres: counts(genres),
         collections: counts(collections),
+        playlists: {
+            let mut v = counts(playlists);
+            v.sort_by_key(|c| c.name.to_lowercase());
+            v
+        },
         studios: counts(studios),
         ratings: counts(ratings),
         shows,

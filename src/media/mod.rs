@@ -48,6 +48,14 @@ pub struct RemoteItem {
     pub collections: Vec<String>,
 }
 
+/// A video playlist: its items' keys in play order.
+#[derive(Debug, Clone)]
+pub struct Playlist {
+    pub key: String,
+    pub title: String,
+    pub items: Vec<String>,
+}
+
 /// An intro/credits marker as reported by the media server (file time, ms).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ServerMarker {
@@ -93,6 +101,14 @@ impl Source {
         match self {
             Source::Plex(p) => p.items(lib).await,
             Source::Jellyfin(j) => j.items(lib).await,
+        }
+    }
+
+    /// Video playlists on the server, with their items in order.
+    pub async fn playlists(&self) -> anyhow::Result<Vec<Playlist>> {
+        match self {
+            Source::Plex(p) => p.playlists().await,
+            Source::Jellyfin(j) => j.playlists().await,
         }
     }
 

@@ -20,6 +20,8 @@ pub enum Ordering {
     Block,
     /// A whole show start to finish, then the next show.
     Marathon,
+    /// Straight through the channel's playlists in their order, then again.
+    Playlist,
 }
 
 impl Ordering {
@@ -37,6 +39,9 @@ pub struct PoolState {
     show_pos: usize,
     current: Option<String>,
     block_left: usize,
+    /// Playlist order: the item that aired last (and where it was).
+    last_id: Option<i64>,
+    last_pos: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -74,6 +79,8 @@ pub struct PoolIndex {
     by_id: HashMap<i64, usize>,
     /// Items grouped by show (each movie alone), in airing order.
     groups: HashMap<String, Vec<usize>>,
+    /// (item id, index) of the pool in playlist order (see `with_playlists`).
+    sequence: Vec<(i64, usize)>,
 }
 
 impl PoolIndex {
@@ -89,7 +96,32 @@ impl PoolIndex {
                 (it.season.unwrap_or(0) == 0, it.season, it.episode, it.year, it.id)
             });
         }
-        Self { pool, by_id, groups }
+        let sequence = pool.iter().map(|&ix| (items[ix].id, ix)).collect();
+        Self { sequence, pool, by_id, groups }
+    }
+
+    /// Order the pool for `Ordering::Playlist`: the wanted playlists in the
+    /// order given (any playlist, by name, if none are), each in its own
+    /// order. Items on no playlist go last, in airing order.
+    pub fn with_playlists(mut self, items: &[Item], wanted: &[String]) -> Self {
+        let rank = |name: &str| -> Option<usize> {
+            if wanted.is_empty() {
+                Some(0)
+            } else {
+                wanted.iter().position(|w| w.eq_ignore_ascii_case(name))
+            }
+        };
+        self.sequence.sort_by_cached_key(|&(_, ix)| {
+            let it = &items[ix];
+            let first = it
+                .playlists
+                .iter()
+                .filter_map(|(name, pos)| Some((rank(name)?, name.to_lowercase(), *pos)))
+                .min()
+                .unwrap_or((usize::MAX, String::new(), 0));
+            (first, it.show_key.clone(), it.season, it.episode, it.id)
+        });
+        self
     }
 
     pub fn is_empty(&self) -> bool {
@@ -115,6 +147,7 @@ impl Picker<'_> {
         let ps = state.pools.entry(pool_key.to_string()).or_default();
         match self.ordering {
             Ordering::Shuffle => self.shuffle(ps, &recent, last, rng),
+            Ordering::Playlist => Some(self.in_order(ps)),
             _ => self.sequential(ps, rng),
         }
     }
@@ -138,6 +171,20 @@ impl Picker<'_> {
             }
             ps.deck = ids;
         }
+    }
+
+    fn in_order(&self, ps: &mut PoolState) -> usize {
+        let seq = &self.index.sequence;
+        // Carry on after the last item; if it left the playlist, from where it was.
+        let next = match ps.last_id.and_then(|last| seq.iter().position(|&(id, _)| id == last)) {
+            Some(p) => p + 1,
+            None if ps.last_id.is_some() => ps.last_pos,
+            None => 0,
+        } % seq.len();
+        let (id, ix) = seq[next];
+        ps.last_pos = next;
+        ps.last_id = Some(id);
+        ix
     }
 
     fn sequential<R: Rng>(&self, ps: &mut PoolState, rng: &mut R) -> Option<usize> {
@@ -287,6 +334,29 @@ mod tests {
         for (show, len) in runs {
             assert_eq!(len, lens[show.as_deref().unwrap()]);
         }
+    }
+
+    #[test]
+    fn playlist_order_follows_the_playlists() {
+        let mut items = library();
+        // "Mix": c2, a1, b3; "Late": a5. Everything else is on no playlist.
+        for (id, name, pos) in [(10, "Mix", 0), (1, "Mix", 1), (8, "Mix", 2), (5, "Late", 0)] {
+            items.iter_mut().find(|i| i.id == id).unwrap().playlists.push((name.into(), pos));
+        }
+        let rule_pool: Vec<usize> = (0..items.len()).filter(|&ix| !items[ix].playlists.is_empty()).collect();
+        let index = PoolIndex::new(&items, rule_pool).with_playlists(&items, &["late".into(), "Mix".into()]);
+        let p = Picker { ordering: Ordering::Playlist, block_size: 0, index: &index, avoid_repeat_ms: 0 };
+        let mut st = ChannelState::default();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ids: Vec<i64> = (0..6).map(|i| items[p.next("d", &mut st, i, &mut rng).unwrap()].id).collect();
+        assert_eq!(ids, vec![5, 10, 1, 8, 5, 10]);
+
+        // Survives a reload, and an item vanishing from the playlist.
+        let mut st: ChannelState = serde_json::from_str(&serde_json::to_string(&st).unwrap()).unwrap();
+        let pool: Vec<usize> = (0..items.len()).filter(|&ix| [5, 10, 8].contains(&items[ix].id)).collect();
+        let index = PoolIndex::new(&items, pool).with_playlists(&items, &["late".into(), "Mix".into()]);
+        let p = Picker { ordering: Ordering::Playlist, block_size: 0, index: &index, avoid_repeat_ms: 0 };
+        assert_eq!(items[p.next("d", &mut st, 0, &mut rng).unwrap()].id, 8);
     }
 
     #[test]

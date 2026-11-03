@@ -6,7 +6,7 @@ use serde_json::Value;
 use url::Url;
 
 use super::json::{arr, i, s};
-use super::{Library, RemoteItem, ServerMarker};
+use super::{Library, Playlist, RemoteItem, ServerMarker};
 use crate::schedule::cuts::Kind;
 
 const PAGE: usize = 500;
@@ -150,6 +150,42 @@ impl Jellyfin {
                 Some(item)
             })
             .collect())
+    }
+
+    /// Playlists belong to users, so ask on behalf of each one.
+    pub async fn playlists(&self) -> anyhow::Result<Vec<Playlist>> {
+        let users = self.get("/Users", &[]).await?;
+        let mut out: Vec<Playlist> = Vec::new();
+        for u in users.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let Some(uid) = s(u, "Id") else { continue };
+            let lists = self
+                .get("/Items", &[("Recursive", "true".into()), ("IncludeItemTypes", "Playlist".into()), ("UserId", uid.clone())])
+                .await?;
+            for p in arr(&lists, "Items") {
+                let (Some(key), Some(title)) = (s(p, "Id"), s(p, "Name")) else { continue };
+                if out.iter().any(|o| o.key == key) {
+                    continue;
+                }
+                let (mut items, mut start) = (Vec::new(), 0);
+                loop {
+                    let page = self
+                        .get(
+                            &format!("/Playlists/{key}/Items"),
+                            &[("UserId", uid.clone()), ("StartIndex", start.to_string()), ("Limit", PAGE.to_string())],
+                        )
+                        .await?;
+                    let list = arr(&page, "Items");
+                    start += list.len();
+                    items.extend(list.iter().filter(|m| s(m, "MediaType").as_deref() != Some("Audio")).filter_map(|m| s(m, "Id")));
+                    let total = i(&page, "TotalRecordCount").unwrap_or(0) as usize;
+                    if list.len() < PAGE || start >= total {
+                        break;
+                    }
+                }
+                out.push(Playlist { key, title, items });
+            }
+        }
+        Ok(out)
     }
 
     pub fn hls_url(&self, item_key: &str, part_key: Option<&str>, session: &str) -> Url {

@@ -161,7 +161,12 @@ pub fn generate<R: Rng>(
         let rule = slot.map(|s| &s.rule).unwrap_or(&cfg.rule);
         pools
             .entry(key)
-            .or_insert_with(|| Rc::new(PoolIndex::new(items, (0..items.len()).filter(|&ix| rule.matches(&items[ix])).collect())))
+            .or_insert_with(|| {
+                Rc::new(
+                    PoolIndex::new(items, (0..items.len()).filter(|&ix| rule.matches(&items[ix])).collect())
+                        .with_playlists(items, &rule.playlists),
+                )
+            })
             .clone()
     };
     let avoid_ms = cfg.avoid_repeat_hours.max(0) * 60 * MINUTE;

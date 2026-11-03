@@ -61,6 +61,13 @@
     </div>
   </div>
 
+  {#if facets.playlists?.length}
+    <div class="sec">
+      <h4>Playlists <span class="dim">— from your media server; pair with "Playlist order"</span></h4>
+      <ChipSelect options={opts(facets.playlists)} bind:selected={rule.playlists} />
+    </div>
+  {/if}
+
   <div class="sec">
     <h4>Genres <span class="dim">— any of</span></h4>
     <ChipSelect options={opts(facets.genres)} bind:selected={rule.genres} />

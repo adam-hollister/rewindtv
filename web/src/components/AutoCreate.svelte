@@ -7,6 +7,7 @@
   let { onclose, ondone }: { onclose: () => void; ondone: () => void } = $props();
 
   const KINDS: [string, string][] = [
+    ['playlist', 'Playlists'],
     ['genre', 'Genres'],
     ['decade', 'Decades'],
     ['show', 'Show 24/7'],

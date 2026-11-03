@@ -16,6 +16,7 @@
     { v: 'episodic', title: 'Rotation', desc: 'One episode per show, in order, cycling between shows.' },
     { v: 'block', title: 'Blocks', desc: 'A few episodes of one show back-to-back, then the next show.' },
     { v: 'marathon', title: 'Marathon', desc: 'Whole series start to finish, then the next one.' },
+    { v: 'playlist', title: 'Playlist order', desc: 'Straight through your playlists in their order, then again.' },
   ];
 
   let ch = $state<Channel>({

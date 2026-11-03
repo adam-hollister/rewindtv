@@ -57,6 +57,19 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
     // Tags in two flat scans instead of a subquery per item.
     let mut genres = tags(db, "SELECT item_id, genre FROM item_genres").await?;
     let mut collections = tags(db, "SELECT item_id, collection FROM item_collections").await?;
+    // Playlist entries, keeping each item's first position per playlist.
+    let mut playlists: std::collections::HashMap<i64, Vec<(String, i64)>> = std::collections::HashMap::new();
+    for (id, title, pos) in sqlx::query_as::<_, (i64, String, i64)>(
+        "SELECT m.id, p.title, MIN(pi.position) FROM playlist_items pi
+         JOIN playlists p ON p.id = pi.playlist_id
+         JOIN media_items m ON m.source_id = p.source_id AND m.item_key = pi.item_key
+         GROUP BY m.id, p.id",
+    )
+    .fetch_all(db)
+    .await?
+    {
+        playlists.entry(id).or_default().push((title, pos));
+    }
     let refs: Vec<crate::markers::ItemRef> = rows
         .iter()
         .map(|r| crate::markers::ItemRef {
@@ -87,6 +100,7 @@ pub async fn load_items(db: &SqlitePool) -> anyhow::Result<Vec<Item>> {
             studio: r.studio,
             genres: genres.remove(&r.id).unwrap_or_default(),
             collections: collections.remove(&r.id).unwrap_or_default(),
+            playlists: playlists.remove(&r.id).unwrap_or_default(),
         })
         .collect())
 }

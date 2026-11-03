@@ -6,7 +6,7 @@ use serde_json::Value;
 use url::Url;
 
 use super::json::{arr, i, s, tags};
-use super::{Library, RemoteItem, ServerMarker};
+use super::{Library, Playlist, RemoteItem, ServerMarker};
 use crate::schedule::cuts::Kind;
 
 const PAGE: usize = 500;
@@ -116,6 +116,31 @@ impl Plex {
             .iter()
             .filter_map(|e| episode(e, shows.get(&s(e, "grandparentRatingKey")?)))
             .collect())
+    }
+
+    pub async fn playlists(&self) -> anyhow::Result<Vec<Playlist>> {
+        let mc = self.get("/playlists", &[("playlistType", "video".to_string())]).await?;
+        let mut out = Vec::new();
+        for p in arr(&mc, "Metadata") {
+            let (Some(key), Some(title)) = (s(p, "ratingKey"), s(p, "title")) else { continue };
+            let mut items = Vec::new();
+            loop {
+                let page = self
+                    .get(
+                        &format!("/playlists/{key}/items"),
+                        &[("X-Plex-Container-Start", items.len().to_string()), ("X-Plex-Container-Size", PAGE.to_string())],
+                    )
+                    .await?;
+                let list = arr(&page, "Metadata");
+                items.extend(list.iter().filter_map(|m| s(m, "ratingKey")));
+                let total = i(&page, "totalSize").or_else(|| i(&page, "leafCount")).unwrap_or(0) as usize;
+                if list.len() < PAGE || items.len() >= total {
+                    break;
+                }
+            }
+            out.push(Playlist { key, title, items });
+        }
+        Ok(out)
     }
 
     /// Browser playback: remux when the source is already H.264, transcode otherwise.

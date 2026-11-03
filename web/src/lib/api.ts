@@ -1,4 +1,4 @@
-export type Ordering = 'shuffle' | 'episodic' | 'block' | 'marathon';
+export type Ordering = 'shuffle' | 'episodic' | 'block' | 'marathon' | 'playlist';
 
 export interface Rule {
   libraries: number[];
@@ -14,11 +14,12 @@ export interface Rule {
   include_items: number[];
   exclude_items: number[];
   keywords: string[];
+  playlists: string[];
 }
 
 export const emptyRule = (): Rule => ({
   libraries: [], kinds: [], genres: [], exclude_genres: [], collections: [], shows: [],
-  studios: [], ratings: [], year_min: null, year_max: null, include_items: [], exclude_items: [], keywords: [],
+  studios: [], ratings: [], year_min: null, year_max: null, include_items: [], exclude_items: [], keywords: [], playlists: [],
 });
 
 export interface User { id: number; name: string; color: string; is_admin: boolean }
@@ -112,7 +113,7 @@ export interface SyncStatus { running: boolean; message: string | null; finished
 export interface Count { name: string; count: number }
 export interface Facets {
   libraries: { id: number; name: string; source: string }[];
-  genres: Count[]; collections: Count[]; studios: Count[]; ratings: Count[];
+  genres: Count[]; collections: Count[]; playlists: Count[]; studios: Count[]; ratings: Count[];
   shows: { key: string; title: string; episodes: number }[];
   year_min: number | null; year_max: number | null;
 }
