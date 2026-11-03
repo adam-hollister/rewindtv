@@ -1,6 +1,6 @@
 [package]
 name = "rewindtv"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Self-hosted retro live-TV channels from your Plex and Jellyfin libraries"
 license = "MIT"

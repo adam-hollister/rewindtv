@@ -29,6 +29,7 @@ const TABLES: &[&str] = &[
     "channel_slots",
     "user_channels",
     "channel_state",
+    "reminders",
     "settings",
     "marker_rules",
     "markers",

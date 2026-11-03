@@ -15,6 +15,8 @@ Turn your **Plex** and **Jellyfin** libraries into old-school live TV channels. 
 
 ## Features
 
+**New in 1.0:** commercials & station IDs, holiday blocks, start over & catch-up, guide search & reminders, playlist channels, and phone as a remote. Playlists and commercials were tested end to end on Jellyfin; on Plex they use Plex's standard playlist and library APIs.
+
 - **Plex and Jellyfin, together.** Connect any number of servers. Channels can mix libraries from both.
 - **Real live TV.** Each channel has a 7-day schedule generated on the server, so every TV in the house shows the same thing at the same moment. Tuning in starts mid-show, at exactly where "live" is.
 - **TV guide.** A scrolling program grid with a now line, a live progress bar on each channel and poster/backdrop previews. It works with mouse, touch, keyboard or a TV remote's D-pad.
@@ -61,6 +63,10 @@ These steps are for TrueNAS SCALE 24.10 "Electric Eel" or newer.
 > **Private repository note:** GitHub publishes the image to `ghcr.io/adam-hollister/rewindtv`. If this repository is private, the package is private too, and TrueNAS can't pull it without credentials. You have two options:
 > - Make the package public: on GitHub, go to **your profile → Packages → rewindtv → Package settings → Change visibility**.
 > - Or add a GHCR credential in TrueNAS: **Apps → Configuration → Manage Container Image Registries**. Use your GitHub username and a personal access token with the `read:packages` scope.
+
+### Updating
+
+The image is rebuilt on every change. In TrueNAS, open **Apps → rewindtv → Update** (or stop and start it) to pull the newest `:latest`. To stay on a known release instead, change the image line in the YAML to a version tag such as `ghcr.io/adam-hollister/rewindtv:1.0.0`. Your channels, markers, logos and backups live in the dataset, so updates never touch them.
 
 ### Docker Compose (any host)
 
